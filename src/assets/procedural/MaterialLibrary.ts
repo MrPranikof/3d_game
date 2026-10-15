@@ -385,12 +385,13 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
   },
   // ───── terrain layers («Малая Токмачка» steppe) ─────
   grass_steppe: {
-    tile: 6, normalStrength: 2.2, period: 64,
+    tile: 6, normalStrength: 0.9, period: 64,
     recipe: (u, v, t, { n, n2 }) => {
       const blades = n.ridged(u * 2, v * 2, 4, 16);
       const patch = n2.fbm(u, v, 4, 3);
-      setRGB(t, 0x56602f, 0.7 + blades * 0.45);
-      mixRGB(t, 0x8a8248, smoothstep(0.45, 0.75, patch) * 0.7); // dry late-summer grass
+      setRGB(t, 0x8a7a45, 0.8 + blades * 0.25); // dry steppe straw
+      mixRGB(t, 0x5d6233, smoothstep(0.5, 0.8, patch) * 0.55); // olive patches
+      mixRGB(t, 0xa58f55, smoothstep(0.2, 0.0, patch) * 0.5); // sun-bleached
       mixRGB(t, 0x4a3b2a, smoothstep(0.7, 0.85, n.fbm(u, v, 3, 8)) * 0.6); // bare soil
       t.h = blades * 0.7 + patch * 0.3; t.rough = 0.95;
     },

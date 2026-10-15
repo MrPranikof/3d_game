@@ -76,7 +76,7 @@ export class Game {
     renderer.setPixelRatio(Math.min(devicePixelRatio, mobile ? 1.25 : 2));
     renderer.setSize(innerWidth, innerHeight, false);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.85;
+    renderer.toneMappingExposure = 0.9;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -141,7 +141,7 @@ export class Game {
     veg.group.userData.heat = 0.2;
     for (const id of ['tree_poplar', 'tree_acacia', 'tree_scorched']) veg.registerType(id, ctx.template(id), 260);
     veg.plant();
-    veg.initGrass(factory.materials, mobile ? 1600 : 4500);
+    veg.initGrass(factory.materials, mobile ? 3500 : 9000);
     scene.add(veg.group, particles.group);
 
     progress(0.86, 'Освещение и небо…');

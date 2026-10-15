@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type RAPIER from '@dimforge/rapier3d-compat';
+import { attribute, float, instanceIndex, mix, positionLocal, positionWorld, sin, smoothstep, time, vec3 } from 'three/tsl';
 import type { AssetTemplate } from '../../assets/pipeline/ModelLoader';
 import type { MaterialLibrary } from '../../assets/procedural/MaterialLibrary';
 import { RNG } from '../../assets/procedural/noise';
@@ -93,15 +94,27 @@ export class Vegetation {
     for (const t of this.layout.yardTrees) add(t.id, t.x, t.z, t.rot, rng.range(0.8, 1.05));
   }
 
-  /** Grass tufts (crossed cards) around the camera. */
-  initGrass(mats: MaterialLibrary, count: number): void {
-    const card = new THREE.PlaneGeometry(0.9, 0.55).translate(0, 0.27, 0);
-    const card2 = card.clone().rotateY(Math.PI / 2);
-    const g = mergeIndexed([card, card2]);
-    // upward-ish normals → soft lighting
-    const nrm = g.attributes.normal as THREE.BufferAttribute;
-    for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, 0, 1, 0);
-    const m = new THREE.InstancedMesh(g, mats.get('grass_tuft'), count);
+  /**
+   * Grass tufts around the camera: real blade geometry (no alpha cards), dark at the root and
+   * sun-bleached at the tip, normals pointing up so they shade like the ground they grow from,
+   * per-instance green/dry tint, and a wind sway in the vertex stage.
+   */
+  initGrass(_mats: MaterialLibrary, count: number): void {
+    const g = grassTuftGeometry(count > 4000 ? 22 : 14);
+    const mat = new THREE.MeshStandardNodeMaterial({ name: 'grass_blades', side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
+    const h = attribute('grassH', 'float'); // 0 at root … 1 at tip
+    const seed = float(instanceIndex).mul(0.137);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL node chains
+    const sway: any = sin(time.mul(1.7).add(positionWorld.x.mul(0.35)).add(positionWorld.z.mul(0.27)).add(seed)).mul(0.07)
+      .add(sin(time.mul(3.1).add(seed.mul(5))).mul(0.025)).mul(h.mul(h));
+    mat.positionNode = positionLocal.add(vec3(sway, 0, sway.mul(0.6)));
+    // late-summer steppe palette (linear): straw / ochre / olive per blade, dark at the root
+    const c = attribute('grassC', 'float');
+    const straw = vec3(0.5, 0.39, 0.17), ochre = vec3(0.4, 0.27, 0.1), olive = vec3(0.21, 0.23, 0.08);
+    const tip = mix(mix(olive, ochre, smoothstep(0.0, 0.5, c)), straw, smoothstep(0.5, 1.0, c));
+    mat.colorNode = mix(vec3(0.05, 0.045, 0.02), tip, smoothstep(0.0, 0.7, h)); // instanceColor tint is applied by the renderer
+    const m = new THREE.InstancedMesh(g, mat, count);
+    m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3).fill(1), 3);
     m.count = 0;
     m.frustumCulled = false;
     m.receiveShadow = true;
@@ -112,7 +125,10 @@ export class Vegetation {
   private scatterGrass(cx: number, cz: number): void {
     const m = this.grass!;
     const cap = m.instanceMatrix.count;
-    const R = 32, cell = 1.25;
+    const cell = 0.5, keep = 0.9;
+    // ring radius from the instance budget so the cap never truncates one side
+    const R = Math.min(32, Math.sqrt(cap / (Math.PI * keep / (cell * cell))));
+    const col = new THREE.Color();
     const mat = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     let k = 0;
     const i0 = Math.floor((cx - R) / cell), i1 = Math.floor((cx + R) / cell);
@@ -120,19 +136,25 @@ export class Vegetation {
     for (let j = j0; j <= j1 && k < cap; j++) {
       for (let i = i0; i <= i1 && k < cap; i++) {
         const h = hash2(i, j);
-        if (h > 0.55) continue;
+        if (h > keep) continue;
         const x = (i + hash2(i + 7, j)) * cell, z = (j + hash2(i, j + 7)) * cell;
         if ((x - cx) ** 2 + (z - cz) ** 2 > R * R) continue;
         if (this.layout.roads.some((r) => distToPolyline(x, z, r.pts) < r.width * 0.6)) continue;
         p.set(x, this.terrain.heightAt(x, z) - 0.05, z);
         q.setFromAxisAngle(up, h * 40);
-        const sc = 0.7 + hash2(j, i) * 0.8;
-        s.set(sc, sc * (0.7 + h), sc);
+        const sc = 0.85 + hash2(j, i) * 0.5;
+        s.set(sc, sc * (0.7 + h * 0.9), sc);
+        // patchy steppe: a little greener in places, brightness jitter per tuft
+        const green = Math.min(1, Math.max(0, Math.sin(x * 0.045) * Math.cos(z * 0.038) * 0.8 + (hash2(i + 3, j + 5) - 0.5) * 0.4));
+        const v = 0.85 + hash2(i + 11, j + 13) * 0.3;
+        col.setRGB(v * (1 - green * 0.25), v, v * (1 - green * 0.1));
+        m.setColorAt(k, col);
         m.setMatrixAt(k++, mat.compose(p, q, s));
       }
     }
     m.count = k;
     m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
   }
 
   update(dt: number, camera: THREE.Camera): void {
@@ -226,4 +248,43 @@ function mergeIndexed(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
   out.setIndex(new THREE.BufferAttribute(idx, 1));
   out.computeBoundingSphere();
   return out;
+}
+
+/** One tuft of `blades` tapered, slightly curved blades (2 segments each); attributes grassH = 0…1 up the blade. */
+function grassTuftGeometry(blades: number): THREE.BufferGeometry {
+  const pos: number[] = [], hs: number[] = [], cs: number[] = [], idx: number[] = [];
+  const rng = new RNG(1234);
+  for (let b = 0; b < blades; b++) {
+    const a = rng.range(0, Math.PI * 2), r = rng.range(0, 0.2);
+    const tone = rng.next();
+    const bx = Math.cos(a) * r, bz = Math.sin(a) * r;
+    const tall = rng.next() < 0.12; // occasional seed stems above the carpet
+    const yaw = rng.range(0, Math.PI * 2), lean = rng.range(0.05, tall ? 0.15 : 0.45), len = tall ? rng.range(0.6, 0.9) : rng.range(0.25, 0.5), w = rng.range(0.005, 0.01);
+    const dx = Math.cos(yaw), dz = Math.sin(yaw); // lean direction
+    const px = -dz, pz = dx; // blade width direction
+    const base = pos.length / 3;
+    const segs = 2;
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs, y = len * t, off = lean * len * t * t, ww = w * (1 - t * 0.85);
+      for (const sgn of [-1, 1]) {
+        pos.push(bx + dx * off + px * ww * sgn, y * (1 - lean * 0.25 * t), bz + dz * off + pz * ww * sgn);
+        hs.push(t);
+        cs.push(tone);
+      }
+    }
+    for (let i = 0; i < segs; i++) {
+      const v = base + i * 2;
+      idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('grassH', new THREE.Float32BufferAttribute(hs, 1));
+  g.setAttribute('grassC', new THREE.Float32BufferAttribute(cs, 1));
+  const n = new Float32Array(pos.length);
+  for (let i = 1; i < n.length; i += 3) n[i] = 1; // up-facing normals: lit like the ground
+  g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
 }

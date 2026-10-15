@@ -41,11 +41,12 @@ export class PostFX {
     const shifted = color.sample(uvd.add(vec2(n.mul(0.006), 0)));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL node chains are re-typed at every step
     let c: any = vec3(mix(base.r, shifted.r, n), base.g, mix(base.b, color.sample(uvd.sub(vec2(n.mul(0.004), 0))).b, n));
-    if (withBloom) c = c.add(bloom(color, 0.12, 0.3, 1.1).rgb);
+    // only genuinely hot pixels (flashes, explosions, tracers) bloom; sunlit walls stay crisp
+    if (withBloom) c = c.add(bloom(color, 0.1, 0.25, 2.4).rgb);
 
     // ── colour grade: slightly desaturated, cool shadows / warm highlights ──
     const lum = luminance(c);
-    c = mix(vec3(lum), c, 0.88);
+    c = mix(vec3(lum), c, 0.95);
     c = c.mul(mix(vec3(0.93, 0.98, 1.05), vec3(1.05, 1.0, 0.94), smoothstep(0.05, 0.6, lum)));
 
     // ── thermal (white-hot) ──

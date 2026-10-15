@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { float, mix, normalMap, positionWorld, smoothstep, texture, vec2, vec3 } from 'three/tsl';
+import { cameraPosition, float, mix, normalMap, positionWorld, smoothstep, texture, vec2, vec3 } from 'three/tsl';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { TileNoise } from '../../assets/procedural/noise';
 import type { MaterialLibrary } from '../../assets/procedural/MaterialLibrary';
@@ -148,24 +148,31 @@ export class Terrain {
     const macro = texture(L('soil').map!, positionWorld.xz.div(173)).r.mul(0.6).add(0.7);
 
     // two-scale grass to break visible tiling
-    let col = mix(tex('grass_steppe', 6).rgb, tex('grass_steppe', 23).rgb, 0.45);
+    let col = mix(tex('grass_steppe', 9).rgb, tex('grass_steppe', 37).rgb, 0.5);
+    // large patches of greener / sun-dried steppe so the field doesn't read as one flat colour
+    const patch = smoothstep(0.35, 0.75, texture(L('soil').map!, positionWorld.xz.div(311)).g);
+    // match the grass carpet's average tone (straw/ochre with olive patches) so the ring edge disappears
+    col = mix(col.mul(vec3(0.95, 0.95, 0.72)), col.mul(vec3(1.22, 1.06, 0.72)), patch);
     col = mix(col, tex('stubble', 4).rgb, sB.r);
-    col = mix(col, col.mul(vec3(0.85, 1.05, 0.8)), sB.g);
+    col = mix(col, col.mul(vec3(0.9, 1.02, 0.85)), sB.g);
     col = mix(col, tex('plowed', 4).rgb, sA.r);
     col = mix(col, tex('road_dirt', 5).rgb, sA.g);
     col = mix(col, tex('asphalt', 4).rgb, sA.b);
     col = mix(col, tex('mud', 3).rgb, sB.b);
     col = mix(col, col.mul(0.35), sA.a.mul(0.85));
     col = col.mul(macro);
+    // beyond the grass ring the field must read as the same carpet seen from afar
+    const far = smoothstep(22, 60, positionWorld.xz.sub(cameraPosition.xz).length()).mul(sA.r.add(sA.g).add(sA.b).add(sB.b).oneMinus().clamp(0, 1));
+    col = mix(col, mix(vec3(0.3, 0.25, 0.11), vec3(0.4, 0.32, 0.14), patch).mul(macro), far.mul(0.85));
 
-    let nrm = tex('grass_steppe', 6, 'normalMap').rgb;
+    let nrm = tex('grass_steppe', 9, 'normalMap').rgb;
     nrm = mix(nrm, tex('plowed', 4, 'normalMap').rgb, sA.r);
     nrm = mix(nrm, tex('road_dirt', 5, 'normalMap').rgb, sA.g);
     nrm = mix(nrm, tex('asphalt', 4, 'normalMap').rgb, sA.b);
 
     const mat = new THREE.MeshStandardNodeMaterial({ name: 'terrain' });
     mat.colorNode = col;
-    mat.normalNode = normalMap(vec3(nrm), vec2(0.8, 0.8));
+    mat.normalNode = normalMap(vec3(nrm), vec2(0.45, 0.45));
     mat.roughnessNode = mix(float(0.95), float(0.8), sA.b.add(smoothstep(0.5, 1, sB.b).mul(0.6)));
     mat.metalnessNode = float(0);
 
