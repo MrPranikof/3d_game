@@ -10,6 +10,7 @@ import { applyScannedBody, scannedBodyUrl } from './pipeline/ScannedBodies';
 import { generateLODs } from './pipeline/LODBuilder';
 import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
+import { preloadRefTextures } from './procedural/RefTexture';
 import { TripoProvider } from './providers/TripoProvider';
 
 /**
@@ -153,6 +154,7 @@ export class SingleAIModelFactory extends EventTarget {
       ensureIndexed(root);
     } else {
       this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
+      await preloadRefTextures();
       const r = this.procedural.build(spec, team);
       root = r.root;
       animations = r.animations;
@@ -229,6 +231,7 @@ export class SingleAIModelFactory extends EventTarget {
       p = (this.queue = this.queue.then(async () => {
         await nextFrame();
         this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
+        await preloadRefTextures();
         const { root, animations } = this.procedural.build(spec, t);
         const report = validateAsset(root, spec);
         if (report.missingNodes.length) throw new Error(`${spec.id}: missing required nodes ${report.missingNodes.join(', ')}`);

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { deg, type Kit, node, PartBuilder, T } from '../Kit';
+import { applyRefProjection, hasRefTexture } from '../RefTexture';
 
 /**
  * Tracked armour: Т-72Б3, Т-80БВМ, Т-64БВ, Leopard 2A4 / 2A6, БМП-2.
@@ -34,14 +35,59 @@ interface Cfg {
   paint: string;
   skirts: 'rubber' | 'armor' | 'none';
   driverX: number;
+  /** optional fit to reference drawings (tools/refs/*.json); all in vehicle space, m */
+  fit?: {
+    glacisLen: number;
+    wheelZ: number[]; wheelY: number;
+    idler: Circle; sprocket: Circle;
+    skirt: [number, number]; // bottom, top
+    sideEra: { z: number[]; y: number; w: number; h: number };
+    drum: { y: number; r: number };
+    turretScale: [number, number, number];
+    rearBin: [number, number, number, number, number, number]; // w h d x y z
+    trunnion: [number, number, number];
+    cage: [number, number, number, number, number]; // w d baseY topY z
+    leoTurret?: { front: number; rear: number; wedgeTip: number };
+  };
 }
 
 const CFG: Record<Variant, Cfg> = {
-  t72b3: { L: 6.95, W: 3.6, trackW: 0.58, belly: 0.47, deck: 1.42, wheelR: 0.375, wheels: 6, rollers: 3, sprocketFront: false, turret: 'soviet', turretZ: -0.2, gunLen: 4.9, gunR: 0.085, era: 'k5', cage: true, paint: 'paint_ru_green', skirts: 'rubber', driverX: 0 },
+  // fitted to assets-src/refs/t72b3_side.jpg / _top.webp (207 px/m side, 104 px/m top)
+  t72b3: {
+    L: 6.8, W: 3.6, trackW: 0.58, belly: 0.47, deck: 1.62, wheelR: 0.37, wheels: 6, rollers: 3, sprocketFront: false, turret: 'soviet', turretZ: 0.15, gunLen: 4.52, gunR: 0.085, era: 'k5', cage: true, paint: 'paint_ru_green', skirts: 'rubber', driverX: 0,
+    fit: {
+      glacisLen: 0.85,
+      wheelZ: [-2.21, -1.36, -0.54, 0.28, 1.1, 1.94], wheelY: 0.47,
+      idler: { z: -3.01, y: 0.84, r: 0.25 }, sprocket: { z: 2.72, y: 0.85, r: 0.28 },
+      skirt: [0.9, 1.5],
+      sideEra: { z: [-2.3, -1.64, -0.94], y: 1.17, w: 0.6, h: 0.5 },
+      drum: { y: 1.72, r: 0.33 },
+      turretScale: [1.05, 1.2, 1.08],
+      rearBin: [1.7, 0.62, 0.95, 0, 0.32, 0.98],
+      trunnion: [0, 0.33, -1.05],
+      cage: [2.4, 3.2, 0.78, 1.95, 0.5],
+    },
+  },
   t80bvm: { L: 7.0, W: 3.6, trackW: 0.58, belly: 0.45, deck: 1.4, wheelR: 0.335, wheels: 6, rollers: 5, sprocketFront: false, turret: 'soviet', turretZ: -0.25, gunLen: 4.9, gunR: 0.085, era: 'relikt', cage: true, paint: 'paint_ru_green', skirts: 'rubber', driverX: 0 },
   t64bv: { L: 6.54, W: 3.42, trackW: 0.54, belly: 0.45, deck: 1.38, wheelR: 0.275, wheels: 6, rollers: 4, sprocketFront: false, turret: 'soviet', turretZ: -0.15, gunLen: 4.9, gunR: 0.085, era: 'k1', cage: true, paint: 'paint_ru_green', skirts: 'rubber', driverX: 0 },
   leo2a4: { L: 7.72, W: 3.75, trackW: 0.635, belly: 0.5, deck: 1.5, wheelR: 0.35, wheels: 7, rollers: 4, sprocketFront: false, turret: 'leo', turretZ: 0.6, gunLen: 5.3, gunR: 0.09, era: 'none', cage: false, paint: 'paint_nato3', skirts: 'armor', driverX: 0.55 },
-  leo2a6: { L: 7.72, W: 3.75, trackW: 0.635, belly: 0.5, deck: 1.5, wheelR: 0.35, wheels: 7, rollers: 4, sprocketFront: false, turret: 'leo', turretZ: 0.6, gunLen: 6.6, gunR: 0.09, era: 'none', cage: false, paint: 'paint_nato3', skirts: 'armor', driverX: 0.55 },
+  // fitted to assets-src/refs/leo2a6_side.webp / _top.webp (98.8 px/m side, 82.8 px/m top)
+  leo2a6: {
+    L: 7.72, W: 3.75, trackW: 0.635, belly: 0.5, deck: 1.85, wheelR: 0.35, wheels: 7, rollers: 4, sprocketFront: false, turret: 'leo', turretZ: -0.18, gunLen: 4.3, gunR: 0.09, era: 'none', cage: false, paint: 'paint_nato3', skirts: 'armor', driverX: 0.55,
+    fit: {
+      glacisLen: 2.2,
+      wheelZ: [-2.41, -1.57, -0.8, -0.03, 0.77, 1.58, 2.43], wheelY: 0.45,
+      idler: { z: -3.28, y: 0.86, r: 0.3 }, sprocket: { z: 3.15, y: 0.86, r: 0.36 },
+      skirt: [0.94, 1.48],
+      sideEra: { z: [], y: 0, w: 0, h: 0 },
+      drum: { y: 0, r: 0 },
+      turretScale: [1, 1, 1],
+      rearBin: [0, 0, 0, 0, 0, 0],
+      trunnion: [0, 0.37, -1.5],
+      cage: [0, 0, 0, 0, 0],
+      leoTurret: { front: -1.3, rear: 3.0, wedgeTip: -2.6 },
+    },
+  },
   bmp2: { L: 6.72, W: 3.15, trackW: 0.3, belly: 0.42, deck: 1.72, wheelR: 0.31, wheels: 6, rollers: 3, sprocketFront: true, turret: 'bmp', turretZ: -0.45, gunLen: 2.2, gunR: 0.035, era: 'none', cage: true, paint: 'paint_ru_green', skirts: 'none', driverX: -0.55 },
 };
 
@@ -57,6 +103,7 @@ export function buildTrackedVehicle(kit: Kit, variant: Variant, id: string): THR
   if (c.turret === 'soviet') buildSovietTurret(kit, c, turret, variant);
   else if (c.turret === 'leo') buildLeoTurret(kit, c, turret, variant);
   else buildBmpTurret(kit, c, turret);
+  if (hasRefTexture(variant)) applyRefProjection(root, variant);
   return root;
 }
 
@@ -84,7 +131,7 @@ function buildHull(kit: Kit, c: Cfg, variant: Variant, hull: THREE.Group): void 
   const yB = c.belly, yD = c.deck;
   const isBmp = variant === 'bmp2';
   const isLeo = c.turret === 'leo';
-  const glacisLen = isBmp ? 2.1 : isLeo ? 1.9 : 1.55;
+  const glacisLen = c.fit?.glacisLen ?? (isBmp ? 2.1 : isLeo ? 1.9 : 1.55);
   const noseY = isBmp ? yB + 0.5 : yB + 0.55;
 
   // lower hull (between tracks)
@@ -130,9 +177,12 @@ function buildHull(kit: Kit, c: Cfg, variant: Variant, hull: THREE.Group): void 
         const panels = 7;
         for (let i = 0; i < panels; i++) {
           const z = -h + 0.6 + (i + 0.5) * (skL / panels);
-          p.add(kit.box(0.025, 0.55, skL / panels - 0.03, 0.005), 'rubber_black', T(sx * (c.W / 2 - 0.02), yD - 0.66, z, sx * deg(3)));
+          const [sb, st] = c.fit?.skirt ?? [yD - 0.935, yD - 0.385];
+          p.add(kit.box(0.025, st - sb, skL / panels - 0.03, 0.005), 'rubber_black', T(sx * (c.W / 2 - 0.02), (sb + st) / 2, z, sx * deg(3)));
         }
-        if (c.era !== 'k1') for (let i = 0; i < 3; i++) p.add(kit.box(0.1, 0.4, 0.42, 0.01), 'era_block', T(sx * (c.W / 2 + 0.02), yD - 0.55, -h + 0.85 + i * 0.45));
+        const se = c.fit?.sideEra;
+        if (se) for (const z of se.z) p.add(kit.box(0.1, se.h, se.w, 0.01), 'era_block', T(sx * (c.W / 2 + 0.02), se.y, z));
+        else if (c.era !== 'k1') for (let i = 0; i < 3; i++) p.add(kit.box(0.1, 0.4, 0.42, 0.01), 'era_block', T(sx * (c.W / 2 + 0.02), yD - 0.55, -h + 0.85 + i * 0.45));
       } else {
         p.add(kit.box(0.08, 0.6, skL * 0.35, 0.015), c.paint, T(sx * (c.W / 2 - 0.04), yD - 0.68, -h + 0.6 + skL * 0.175));
         p.add(kit.box(0.04, 0.55, skL * 0.65, 0.01), c.paint, T(sx * (c.W / 2 - 0.03), yD - 0.66, -h + 0.6 + skL * 0.35 + skL * 0.325));
@@ -158,8 +208,9 @@ function buildHull(kit: Kit, c: Cfg, variant: Variant, hull: THREE.Group): void 
   // rear details
   if (variant === 't72b3' || variant === 't64bv') {
     for (const sx of [-1, 1]) {
-      p.add(kit.cylX(0.3, 0.9), 'paint_ru_green', T(sx * 0.6, yD - 0.25, h + 0.32));
-      p.add(kit.cylX(0.31, 0.04), 'gunmetal', T(sx * 0.6 + 0.3, yD - 0.25, h + 0.32));
+      const dr = c.fit?.drum ?? { y: yD - 0.25, r: 0.3 };
+      p.add(kit.cylX(dr.r, 0.9), 'paint_ru_green', T(sx * 0.6, dr.y, h + dr.r + 0.02));
+      p.add(kit.cylX(dr.r + 0.01, 0.04), 'gunmetal', T(sx * 0.6 + 0.3, dr.y, h + dr.r + 0.02));
     }
     p.add(kit.cylX(0.13, inner + 0.2), 'logs', T(0, yD + 0.18, h - 0.05)); // unditching log
     p.add(kit.box(0.25, 0.15, 0.35), 'rust', T(-c.W / 2 + 0.15, yD - 0.3, 0.5)); // exhaust
@@ -276,12 +327,12 @@ function buildTrack(kit: Kit, c: Cfg, side: 'L' | 'R', hull: THREE.Group): void 
   const h = c.L / 2;
   const thick = 0.07;
   const rearZ = h - 0.38, frontZ = -h + 0.42;
-  const sprocket: Circle = { z: c.sprocketFront ? frontZ : rearZ, y: c.wheelR + 0.33, r: 0.32 };
-  const idler: Circle = { z: c.sprocketFront ? rearZ : frontZ, y: c.wheelR + 0.25, r: 0.27 };
-  const wy = c.wheelR + thick;
+  const sprocket: Circle = c.fit?.sprocket ?? { z: c.sprocketFront ? frontZ : rearZ, y: c.wheelR + 0.33, r: 0.32 };
+  const idler: Circle = c.fit?.idler ?? { z: c.sprocketFront ? rearZ : frontZ, y: c.wheelR + 0.25, r: 0.27 };
+  const wy = c.fit?.wheelY ?? c.wheelR + thick;
   const span = (rearZ - frontZ) - 1.25;
   const wheels: Circle[] = [];
-  for (let i = 0; i < c.wheels; i++) wheels.push({ z: frontZ + 0.62 + (span * i) / (c.wheels - 1), y: wy, r: c.wheelR });
+  for (let i = 0; i < c.wheels; i++) wheels.push({ z: c.fit?.wheelZ[i] ?? frontZ + 0.62 + (span * i) / (c.wheels - 1), y: wy, r: c.wheelR });
   const rollerY = Math.max(sprocket.y + sprocket.r, idler.y + idler.r) - 0.1;
   const rollers: Circle[] = [];
   for (let i = 0; i < c.rollers; i++) rollers.push({ z: frontZ + 0.9 + ((span - 0.4) * i) / Math.max(1, c.rollers - 1), y: rollerY, r: 0.09 });
@@ -393,12 +444,26 @@ function smokeLaunchers(kit: Kit, turret: THREE.Group, positions: [number, numbe
 function cage(kit: Kit, turret: THREE.Group, w: number, d: number, baseY: number, topY: number, z: number): void {
   const cg = node('Cage', turret);
   const p = new PartBuilder(kit);
-  const posts: [number, number][] = [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2], [-w / 2, 0], [w / 2, 0]];
-  for (const [x, zz] of posts) p.add(kit.cyl(0.025, 0.03, topY - baseY, 6), 'rust', T(x, (baseY + topY) / 2, z + zz));
-  p.add(kit.grid(w, d, 8, 10, 0.03), 'rust', T(0, topY, z));
-  p.add(kit.quad(w, d).rotateX(-Math.PI / 2), 'cage_net', T(0, topY + 0.02, z));
-  // side slat strips
-  for (const sx of [-1, 1]) for (let i = 0; i < 7; i++) p.add(kit.box(0.025, 0.45, 0.025), 'rust', T(sx * w / 2, topY - 0.22, z - d / 2 + (d * i) / 6));
+  const band = Math.min(0.5, (topY - baseY) * 0.45); // netted side band hanging from the roof frame
+  // posts + diagonal braces down to the turret roof
+  for (const [x, zz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]] as [number, number][]) {
+    p.add(kit.cyl(0.025, 0.03, topY - baseY, 6), 'rust', T(x * 0.55, (baseY + topY) / 2, z + zz * 0.55));
+    const bx = x * 0.78, bz = zz * 0.78, len = Math.hypot(x * 0.45, topY - band - baseY, zz * 0.45);
+    p.add(kit.cyl(0.02, 0.02, len, 6), 'rust', T(bx, baseY + (topY - band - baseY) / 2, z + bz, Math.atan2(zz * 0.45, topY - band - baseY) * 0.9, 0, -Math.atan2(x * 0.45, topY - band - baseY) * 0.9));
+  }
+  // roof frame + net
+  p.add(kit.grid(w, d, 3, 4, 0.035), 'rust', T(0, topY, z));
+  p.add(kit.quad(w, d).rotateX(-Math.PI / 2), 'cage_net', T(0, topY + 0.01, z));
+  // side bands: lower rail + net panels on all four sides
+  for (const sx of [-1, 1]) {
+    p.add(kit.box(0.035, 0.035, d), 'rust', T(sx * w / 2, topY - band, z));
+    p.add(kit.quad(d, band).rotateY(Math.PI / 2), 'cage_net', T(sx * w / 2, topY - band / 2, z));
+    for (let i = 0; i <= 4; i++) p.add(kit.box(0.03, band, 0.03), 'rust', T(sx * w / 2, topY - band / 2, z - d / 2 + (d * i) / 4));
+  }
+  for (const sz of [-1, 1]) {
+    p.add(kit.box(w, 0.035, 0.035), 'rust', T(0, topY - band, z + sz * d / 2));
+    p.add(kit.quad(w, band), 'cage_net', T(0, topY - band / 2, z + sz * d / 2));
+  }
   p.emit(cg);
 }
 
@@ -452,10 +517,12 @@ function buildSovietTurret(kit: Kit, c: Cfg, turret: THREE.Group, variant: Varia
   const p = new PartBuilder(kit);
   const P = c.paint;
   // cast dome (lathe) slightly elongated
-  p.add(kit.lathe([[0, 0.66], [0.55, 0.64], [1.0, 0.52], [1.18, 0.32], [1.22, 0.1], [1.15, 0.0], [0.0, 0.0]], kit.radial + 8).scale(1, 1, 1.1), P, T(0, 0, 0.1));
+  const ts = c.fit?.turretScale ?? [1, 1, 1.1];
+  p.add(kit.lathe([[0, 0.66], [0.55, 0.64], [1.0, 0.52], [1.18, 0.32], [1.22, 0.1], [1.15, 0.0], [0.0, 0.0]], kit.radial + 8).scale(...ts), P, T(0, 0, 0.1));
   p.add(kit.cyl(1.05, 1.1, 0.08), 'gunmetal', T(0, 0.0, 0.1));
   // rear stowage bin
-  p.add(kit.box(1.6, 0.4, 0.45, 0.04), P, T(0, 0.3, 1.45));
+  const rb = c.fit?.rearBin ?? [1.6, 0.4, 0.45, 0, 0.3, 1.45];
+  p.add(kit.box(rb[0], rb[1], rb[2], 0.04), P, T(rb[3], rb[4], rb[5]));
   // ERA package
   if (c.era === 'k5' || c.era === 'relikt') {
     for (const sx of [-1, 1]) {
@@ -491,20 +558,23 @@ function buildSovietTurret(kit: Kit, c: Cfg, turret: THREE.Group, variant: Varia
   p.add(kit.cyl(0.006, 0.01, 1.0, 5), 'gunmetal', T(-0.9, 1.15, 0.9, deg(-6)));
   p.emit(turret);
   smokeLaunchers(kit, turret, [0, 1, 2, 3].flatMap((i) => [[-0.9 - i * 0.07, 0.48, -0.72 + i * 0.16, deg(25 + i * 8)], [0.9 + i * 0.07, 0.48, -0.72 + i * 0.16, deg(-25 - i * 8)]] as [number, number, number, number][]), P);
-  if (c.cage) cage(kit, turret, 2.6, 3.2, 0.66, variant === 't64bv' ? 1.4 : 1.5, 0.3);
-  buildCannon(kit, c, turret, [0, 0.38, -1.05], 'soviet');
+  const cg = c.fit?.cage ?? [2.6, 3.2, 0.66, variant === 't64bv' ? 1.4 : 1.5, 0.3];
+  if (c.cage) cage(kit, turret, ...cg);
+  buildCannon(kit, c, turret, c.fit?.trunnion ?? [0, 0.38, -1.05], 'soviet');
   gunnerStation(kit, turret, 0.45, 0.25, -0.2);
 }
 
 function buildLeoTurret(kit: Kit, c: Cfg, turret: THREE.Group, variant: Variant): void {
   const p = new PartBuilder(kit);
   const P = c.paint;
-  const outline: [number, number][] = [[-0.85, -1.55], [0.85, -1.55], [1.32, -1.0], [1.35, 1.6], [1.05, 2.15], [-1.05, 2.15], [-1.35, 1.6], [-1.32, -1.0]];
+  const lt = c.fit?.leoTurret ?? { front: -1.55, rear: 2.15, wedgeTip: -2.25 };
+  const F = lt.front, R = lt.rear;
+  const outline: [number, number][] = [[-0.85, F], [0.85, F], [1.32, F + 0.55], [1.35, R - 0.55], [1.05, R], [-1.05, R], [-1.35, R - 0.55], [-1.32, F + 0.55]];
   p.add(kit.profileY(outline, 0.78, 0.03), P, T(0, 0.02, 0));
   p.add(kit.cyl(1.05, 1.1, 0.08), 'gunmetal');
   if (variant === 'leo2a6') {
     for (const sx of [-1, 1]) {
-      const w: [number, number][] = [[sx * 0.4, -1.56], [sx * 0.95, -2.25], [sx * 1.34, -1.05], [sx * 1.3, -1.0]];
+      const w: [number, number][] = [[sx * 0.4, F - 0.01], [sx * 0.95, lt.wedgeTip], [sx * 1.34, F + 0.5], [sx * 1.3, F + 0.55]];
       p.add(kit.profileY(sx < 0 ? w.slice().reverse() : w, 0.74, 0.02), P, T(0, 0.04, 0));
     }
   }
@@ -521,8 +591,10 @@ function buildLeoTurret(kit: Kit, c: Cfg, turret: THREE.Group, variant: Variant)
   p.add(kit.box(0.08, 0.14, 0.3), 'gunmetal', T(0.5, 0.94, 0.55));
   // rear bustle stowage basket
   const basket = kit.grid(2.2, 0.55, 8, 2, 0.03);
-  p.add(basket, 'gunmetal', T(0, 0.45, 2.45));
-  p.add(kit.box(2.0, 0.35, 0.45, 0.06), 'fabric_olive', T(0, 0.62, 2.42));
+  if (!c.fit?.leoTurret) { // a fitted turret already includes the bustle basket in its outline
+    p.add(basket, 'gunmetal', T(0, 0.45, R + 0.3));
+    p.add(kit.box(2.0, 0.35, 0.45, 0.06), 'fabric_olive', T(0, 0.62, R + 0.27));
+  }
   p.add(kit.cyl(0.006, 0.01, 1.0, 5), 'gunmetal', T(1.1, 1.3, 1.8, deg(-6)));
   p.emit(turret);
   smokeLaunchers(kit, turret, [0, 1, 2, 3].flatMap((i) => [[-1.32, 0.86, 0.9 + i * 0.16, deg(80)], [1.32, 0.86, 0.9 + i * 0.16, deg(-80)]] as [number, number, number, number][]), 'gunmetal');

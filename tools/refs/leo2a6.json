@@ -1,0 +1,8 @@
+{
+  "id": "leo2a6",
+  "outDir": "public/models/ref",
+  "side": { "file": "assets-src/refs/leo2a6_side.webp", "crop": [0, 100, 1024, 590], "map": [606.5, 98.8, 564, -98.8] },
+  "top": { "file": "assets-src/refs/leo2a6_top.webp", "crop": [0, 110, 1024, 470], "map": [379.5, -82.8, 291, 82.8] },
+  "patch": { "file": "assets-src/refs/leo2a6_side.webp", "crop": [330, 422, 830, 468], "pxPerM": 150 },
+  "normalStrength": 2.5
+}

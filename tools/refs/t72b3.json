@@ -1,0 +1,8 @@
+{
+  "id": "t72b3",
+  "outDir": "public/models/ref",
+  "side": { "file": "assets-src/refs/t72b3_side.jpg", "crop": [0, 330, 2000, 1130], "map": [1137.5, 207, 1113, -207] },
+  "top": { "file": "assets-src/refs/t72b3_top.webp", "crop": [0, 180, 1024, 600], "map": [446, -104, 388, 104] },
+  "patch": { "crop": [130, 206, 440, 262], "pxPerM": 150 },
+  "normalStrength": 2.5
+}
