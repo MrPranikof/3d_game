@@ -27,6 +27,8 @@ export interface GameSettings {
   playerTeam: Team;
   touch: boolean;
   touchLayout: 'two' | 'three' | 'claw';
+  /** graphics API: auto = WebGL2 on phones/tablets, WebGPU elsewhere */
+  api: 'auto' | 'webgpu' | 'webgl';
 }
 
 export interface GameContext {

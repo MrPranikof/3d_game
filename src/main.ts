@@ -1,5 +1,5 @@
 import type { Team } from './assets/StylePreset';
-import { Game } from './game/Game';
+import { Game, reportError } from './game/Game';
 import { enterFullscreen, showLoading, showMenu, type MenuResult } from './game/ui/Menu';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -33,7 +33,7 @@ async function play(r: MenuResult, team?: Team): Promise<void> {
     showStart(g);
     if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) (window as unknown as { __game: Game }).__game = g;
   } catch (e) {
-    console.error(e);
+    reportError(`Ошибка запуска: ${(e as Error).message}`);
     loading.set(1, `Ошибка: ${(e as Error).message}`);
   }
 }
@@ -47,6 +47,9 @@ function showStart(g: Game): void {
   el.addEventListener('click', () => { el.remove(); g.start(); }, { once: true });
   (window as unknown as { __startGame?: () => void }).__startGame = () => { el.remove(); g.start(); };
 }
+
+addEventListener('error', (e) => reportError(`${e.message} (${e.filename?.split('/').pop()}:${e.lineno})`));
+addEventListener('unhandledrejection', (e) => reportError(`Promise: ${(e.reason as Error)?.message ?? e.reason}`));
 
 menu();
 

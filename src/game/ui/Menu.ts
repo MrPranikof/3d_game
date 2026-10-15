@@ -39,6 +39,7 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
         <label>Ботов в команде <input data-s="bots" type="range" min="3" max="12" value="${s.botsPerTeam ?? (touch ? 6 : 9)}"><output></output></label>
         <label>Чувствительность <input data-s="sens" type="range" min="0.3" max="2.5" step="0.05" value="${s.sens ?? 1}"><output></output></label>
         <label><input data-s="invert" type="checkbox" ${s.invertY ? 'checked' : ''}> Инверсия по вертикали</label>
+        <label>Графика <select id="api" data-s="api"><option value="auto">Авто</option><option value="webgl">WebGL2 (совместимость)</option><option value="webgpu">WebGPU</option></select></label>
         <label class="touch-only">Раскладка <select data-s="layout"><option value="two">2 пальца</option><option value="three">3 пальца</option><option value="claw">4 пальца (Claw)</option></select></label>
         <button class="touch-only gyro" data-s="gyro">Включить гироскоп</button>
       </details>
@@ -58,6 +59,8 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
   q.value = defQuality;
   const lay = el.querySelector<HTMLSelectElement>('[data-s=layout]')!;
   lay.value = s.touchLayout ?? 'two';
+  const api = el.querySelector<HTMLSelectElement>('[data-s=api]')!;
+  api.value = s.api ?? 'auto';
   el.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((r) => {
     const out = r.nextElementSibling as HTMLOutputElement;
     const upd = () => (out.textContent = r.value);
@@ -83,12 +86,13 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
         playerTeam: b.dataset.team as Team,
         touch,
         touchLayout: lay.value as GameSettings['touchLayout'],
+        api: api.value as GameSettings['api'],
       },
       sens: Number(el.querySelector<HTMLInputElement>('[data-s=sens]')!.value),
       invertY: el.querySelector<HTMLInputElement>('[data-s=invert]')!.checked,
       gyro,
     };
-    try { localStorage.setItem(KEY, JSON.stringify({ quality: r.settings.quality, botsPerTeam: r.settings.botsPerTeam, touchLayout: r.settings.touchLayout, sens: r.sens, invertY: r.invertY })); } catch { /* ignore */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ quality: r.settings.quality, botsPerTeam: r.settings.botsPerTeam, touchLayout: r.settings.touchLayout, api: r.settings.api, sens: r.sens, invertY: r.invertY })); } catch { /* ignore */ }
     onPlay(r);
   }));
   return el;

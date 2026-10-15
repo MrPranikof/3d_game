@@ -60,14 +60,16 @@ export class Player {
     this.vmRifle = rifle.root;
     this.vmMuzzle = rifle.nodes.get('Muzzle');
     const aim = rifle.nodes.get('Aim_Point');
-    if (aim) this.aimOffset.copy(aim.position).negate().multiplyScalar(0.62).add(new THREE.Vector3(0, 0, -0.05));
+    // ADS: eye on the sight line, just ahead of the stock comb (≈10 cm behind the collimator)
+    if (aim) this.aimOffset.set(-aim.position.x, -aim.position.y, 0.02).multiplyScalar(0.62);
+    // collimator lenses are see-through from behind: hide the opaque lens discs in first person
+    rifle.nodes.get('Sight')?.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && (m.material as THREE.Material).name === 'glass_optic') { m.visible = false; if ((m.parent as THREE.LOD)?.isLOD) m.parent!.visible = false; }
+    });
     this.vmEW = ctx.factory.instantiateTemplate(ctx.template('ew_gun')).root;
     this.vmGrenade = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8).scale(1, 1.25, 1), new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: 0.6 }));
-    const gloves = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.11), new THREE.MeshStandardMaterial({ color: 0x1d1d1c, roughness: 0.85 }));
-    gloves.position.set(0, -0.03, 0.03);
-    const glove2 = gloves.clone();
-    glove2.position.set(0, -0.01, -0.33);
-    this.vmRifle.add(gloves, glove2);
+    this.vmRifle.add(buildArms(ctx, team, team === 'A' ? -0.33 : -0.36));
     for (const o of [this.vmRifle, this.vmEW, this.vmGrenade]) {
       o.traverse((m) => { m.castShadow = false; m.frustumCulled = false; });
       this.viewmodel.add(o);
@@ -251,7 +253,7 @@ export class Player {
     this.swayV.x += (-f.look.x * 2 - this.swayV.x) * Math.min(1, dt * 8);
     this.swayV.y += (-f.look.y * 2 - this.swayV.y) * Math.min(1, dt * 8);
     this.kick = Math.max(0, this.kick - dt * 14);
-    const hip = new THREE.Vector3(0.13, -0.15, -0.34);
+    const hip = new THREE.Vector3(0.15, -0.18, -0.3);
     const adsPos = this.aimOffset.clone();
     const p = hip.lerp(adsPos, this.ads);
     p.x += Math.sin(this.bob) * 0.012 * bobAmt + this.swayV.x * 0.04 * (1 - this.ads * 0.8);
@@ -261,7 +263,7 @@ export class Player {
     if (s.sprinting) { p.add(new THREE.Vector3(-0.05, -0.06, 0.05)); rx -= 0.5; ry = 0.6; }
     if (s.weapon.reloading > 0) { const k = Math.sin((1 - s.weapon.reloading / s.weapon.reloadTime) * Math.PI); p.y -= 0.12 * k; rx -= 0.6 * k; }
     this.viewmodel.position.copy(p);
-    this.viewmodel.rotation.set(rx, ry, 0);
+    this.viewmodel.rotation.set(rx, ry + 0.06 * (1 - this.ads), 0);
     this.vmEW.position.set(0, 0.02, 0.05);
     this.vmGrenade.position.set(0.02, 0.04, -0.05);
   }
@@ -414,4 +416,55 @@ export class Player {
   eyeHeight(): number {
     return EYE_HEIGHT[this.soldier.stance];
   }
+}
+
+/**
+ * First-person arms holding the rifle: sleeves in the team camouflage with ID tape, gloved
+ * hands on the pistol grip and the handguard. Built in rifle space from the same material
+ * library as the soldier models.
+ */
+function buildArms(ctx: GameContext, team: Team, supportZ: number): THREE.Group {
+  const mats = ctx.factory.materials;
+  const camo = mats.get(team === 'A' ? 'camo_mm14' : 'camo_emr');
+  const glove = mats.get('rubber_black');
+  const tape = mats.get(`tape_${team}`);
+  const g = new THREE.Group();
+  g.name = 'Arms';
+  const seg = (a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material) => {
+    const d = b.clone().sub(a);
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, d.length() - r), 4, 10), mat);
+    m.position.copy(a).addScaledVector(d, 0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    g.add(m);
+    return m;
+  };
+  const hand = (p: THREE.Vector3, rotZ: number, rotX: number) => {
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.085, 0.095), glove);
+    palm.position.copy(p);
+    palm.rotation.set(rotX, 0, rotZ);
+    g.add(palm);
+    const fingers = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.06, 3, 8), glove);
+    fingers.rotation.set(0, 0, Math.PI / 2);
+    fingers.position.set(0.0, -0.035, -0.02);
+    palm.add(fingers);
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.04, 3, 8), glove);
+    thumb.rotation.set(Math.PI / 2.5, 0, 0);
+    thumb.position.set(-0.03, 0.02, -0.03);
+    palm.add(thumb);
+  };
+  // right: pistol grip → elbow → shoulder (off screen)
+  const rH = new THREE.Vector3(0.0, -0.045, 0.035), rE = new THREE.Vector3(0.17, -0.26, 0.33), rS = new THREE.Vector3(0.24, -0.34, 0.75);
+  hand(rH, 0.15, -0.35);
+  seg(rH.clone().add(new THREE.Vector3(0.01, -0.02, 0.05)), rE, 0.045, camo);
+  seg(rE, rS, 0.058, camo);
+  seg(rE.clone().lerp(rS, 0.3), rE.clone().lerp(rS, 0.38), 0.062, tape);
+  seg(rH.clone().add(new THREE.Vector3(0.01, -0.02, 0.05)), rH.clone().add(new THREE.Vector3(0.015, -0.03, 0.09)), 0.047, glove); // cuff
+  // left: handguard → elbow → shoulder
+  const lH = new THREE.Vector3(-0.005, -0.02, supportZ), lE = new THREE.Vector3(-0.21, -0.25, -0.05), lS = new THREE.Vector3(-0.28, -0.34, 0.55);
+  hand(lH, -0.5, 0.2);
+  seg(lH.clone().add(new THREE.Vector3(-0.03, -0.03, 0.03)), lE, 0.045, camo);
+  seg(lE, lS, 0.058, camo);
+  seg(lE.clone().lerp(lS, 0.3), lE.clone().lerp(lS, 0.38), 0.062, tape);
+  g.traverse((o) => { o.castShadow = false; o.frustumCulled = false; });
+  return g;
 }

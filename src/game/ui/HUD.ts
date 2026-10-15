@@ -39,6 +39,7 @@ export class HUD {
       <div class="msg" data-k="msg"></div>
       <div class="threat" data-k="threat">⚠ FPV-ДРОН ПРОТИВНИКА</div>
       <div class="reticle-inf" data-k="cross"><i class="c-t"></i><i class="c-b"></i><i class="c-l"></i><i class="c-r"></i><i class="c-d"></i></div>
+      <div class="reddot" data-k="dot"></div>
       <div class="hitmark" data-k="hit"><i></i><i></i><i></i><i></i></div>
       <div class="hit-text" data-k="hitText"></div>
       <div class="dmg-ring" data-k="dmgRing"></div>
@@ -65,7 +66,7 @@ export class HUD {
       <div class="emp-hud" data-k="emp"><div class="emp-ret"></div><div class="emp-info" data-k="empInfo"></div></div>
       <div class="dead" data-k="dead"><h2 data-k="deadTitle">Вы погибли</h2><div data-k="deadSub"></div><div class="spawns" data-k="spawns"></div></div>
       <div class="board" data-k="board"></div>
-      <div class="pause" data-k="pause"><div class="pause-box"><h2>Пауза</h2><button data-act="resume">Продолжить</button><button data-act="settings">Настройки</button><button data-act="quit">Выйти в меню</button></div></div>
+      <div class="pause" data-k="pause"><div class="pause-box"><h2>Пауза</h2><div class="sub" data-k="api"></div><button data-act="resume">Продолжить</button><button data-act="settings">Настройки</button><button data-act="quit">Выйти в меню</button></div></div>
       <div class="end" data-k="end"><div class="end-box"><h1 data-k="endTitle"></h1><div data-k="endStats"></div><button data-act="restart">Играть снова</button><button data-act="quit">В меню</button></div></div>
     `;
     parent.appendChild(r);
@@ -100,6 +101,7 @@ export class HUD {
     this.onModeChange?.(m);
     const show = (k: string, v: boolean) => (this.el[k].style.display = v ? '' : 'none');
     show('cross', m === 'infantry');
+    show('dot', m === 'infantry');
     show('ammoBox', m === 'infantry');
     show('tank', m === 'tank');
     show('drone', m === 'drone');
@@ -146,6 +148,8 @@ export class HUD {
 
   showPause(on: boolean): void {
     this.paused = on;
+    const r = this.ctx.renderer.backend as { isWebGPUBackend?: boolean };
+    this.el.api.textContent = `Графика: ${r.isWebGPUBackend ? 'WebGPU' : 'WebGL2'} · ${this.ctx.settings.quality}`;
     this.el.pause.style.display = on ? 'flex' : 'none';
   }
 
@@ -212,6 +216,8 @@ export class HUD {
       this.el.cross.style.setProperty('--spread', `${spread}px`);
       this.el.cross.style.opacity = pl.ads > 0.5 || s.sprinting ? '0' : '1';
       this.ctx.postfx.uScope.value = pl.optic && pl.ads > 0.8 ? 1 : 0;
+      this.el.dot.style.opacity = pl.ads > 0.85 && pl.slot === 'rifle' ? '1' : '0';
+      this.el.dot.classList.toggle('scope', pl.optic);
     }
     if (this.mode === 'tank' && pl.vehicle) this.updateTank(pl.vehicle);
     if (this.mode === 'drone' && pl.drone) this.updateDrone();

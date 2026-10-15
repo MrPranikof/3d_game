@@ -49,6 +49,7 @@ export class Game {
   private fpsAcc = 0;
   private fpsN = 0;
   fps = 0;
+  backendName = '';
   onExit?: () => void;
   onRestart?: () => void;
 
@@ -61,8 +62,17 @@ export class Game {
   private async init(settings: GameSettings, canvas: HTMLCanvasElement, ui: HTMLElement, progress: (p: number, text: string) => void): Promise<void> {
     progress(0.02, 'Инициализация WebGPU…');
     const mobile = settings.quality === 'mobile';
-    const renderer = new THREE.WebGPURenderer({ canvas, antialias: !mobile, powerPreference: 'high-performance' });
+    // Mobile WebGPU (e.g. iOS 26 Safari) is still young; the WebGL2 backend is the proven path there.
+    const forceWebGL = settings.api === 'webgl' || (settings.api !== 'webgpu' && settings.touch);
+    const renderer = new THREE.WebGPURenderer({ canvas, antialias: !mobile, powerPreference: 'high-performance', forceWebGL });
     await renderer.init();
+    this.backendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'WebGPU' : 'WebGL2';
+    type Dev = { lost: Promise<{ message: string }>; addEventListener?: (t: string, f: (e: { error: { message: string } }) => void) => void };
+    const dev = (renderer.backend as { device?: Dev }).device;
+    if (dev) {
+      void dev.lost.then((i) => reportError(`WebGPU device lost: ${i.message}. Выберите «WebGL2» в настройках.`));
+      dev.addEventListener?.('uncapturederror', (e) => reportError(`WebGPU: ${e.error.message}`));
+    }
     renderer.setPixelRatio(Math.min(devicePixelRatio, mobile ? 1.25 : 2));
     renderer.setSize(innerWidth, innerHeight, false);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -331,3 +341,17 @@ export class Game {
 }
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/** Visible error panel (mobile has no console). */
+export function reportError(msg: string): void {
+  console.error(msg);
+  let el = document.getElementById('err-panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'err-panel';
+    el.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:200;max-height:30vh;overflow:auto;background:rgba(60,10,10,.92);color:#fff;font:12px/1.4 ui-monospace,monospace;padding:8px 10px;border-radius:6px;pointer-events:auto;white-space:pre-wrap';
+    el.addEventListener('click', () => el!.remove());
+    document.body.appendChild(el);
+  }
+  el.textContent = `${el.textContent ? el.textContent + '\n' : ''}${msg}`.slice(-3000);
+}

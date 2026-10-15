@@ -79,7 +79,10 @@ export function buildRifle(kit: Kit, kind: 'ar' | 'ak'): THREE.Group {
 
   // collimator (red dot) — shared design for both platforms
   sp.add(kit.box(0.03, 0.012, 0.05), 'gunmetal', T(0, -0.008, 0));
-  sp.add(kit.cylZ(0.019, 0.07, kit.radial), 'gunmetal', T(0, 0.018, 0));
+  // open tube with rims: you look through a collimator, not at its end caps
+  sp.add(kit.cyl(0.019, 0.019, 0.07, kit.radial, true).rotateX(-Math.PI / 2), 'gunmetal', T(0, 0.018, 0));
+  sp.add(kit.torus(0.0185, 0.0025, kit.radial), 'gunmetal', T(0, 0.018, -0.035));
+  sp.add(kit.torus(0.0185, 0.0025, kit.radial), 'gunmetal', T(0, 0.018, 0.035));
   sp.add(kit.cylZ(0.016, 0.004, kit.radial), 'glass_optic', T(0, 0.018, -0.034));
   sp.add(kit.cylZ(0.016, 0.004, kit.radial), 'glass_optic', T(0, 0.018, 0.034));
   sp.add(kit.box(0.012, 0.012, 0.015), 'gunmetal', T(0.02, 0.018, 0));
