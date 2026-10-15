@@ -1,0 +1,22 @@
+<!doctype html><html><body style="margin:0;background:#888"><canvas id="c" width="900" height="600"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+r.outputColorSpace = THREE.SRGBColorSpace;
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x8a9099);
+sc.add(new THREE.HemisphereLight(0xffffff, 0x445544, 1.2)); const d = new THREE.DirectionalLight(0xffffff, 2); d.position.set(3, 5, -4); sc.add(d);
+sc.add(new THREE.AxesHelper(1));
+const g = await new GLTFLoader().loadAsync(q.get('f') || '/models/tripo/_view.glb');
+sc.add(g.scene);
+if (q.get('pose')) { const set = (n, x, y, z) => { const b = g.scene.getObjectByName(n); if (b) b.rotation.set(x, y, z); };
+  set('RightArm', -1.2, 0, 0.5); set('RightForeArm', -0.9, 0, 0); set('LeftArm', -0.9, 0, -0.4); set('LeftForeArm', -1.2, 0.3, 0);
+  set('LeftUpLeg', -0.7, 0, 0); set('LeftLeg', 1.0, 0, 0); set('RightUpLeg', 0.3, 0, 0); set('Head', 0, 0.6, 0); set('Chest', 0.15, 0.2, 0); }
+const box = new THREE.Box3().setFromObject(g.scene), c = box.getCenter(new THREE.Vector3()), R = box.getSize(new THREE.Vector3()).length();
+const views = (q.get('v') || '0,-1').split(';');
+const W = 900 / views.length; r.setScissorTest(true);
+views.forEach((v, i) => { const [x, z] = v.split(',').map(Number); const cam = new THREE.PerspectiveCamera(35, W / 600, 0.01, 100);
+  cam.position.set(c.x + x * R * 1.4, c.y + R * 0.25, c.z + z * R * 1.4); cam.lookAt(c); r.setViewport(i * W, 0, W, 600); r.setScissor(i * W, 0, W, 600); r.render(sc, cam); });
+window.done = true;
+</script></body></html>

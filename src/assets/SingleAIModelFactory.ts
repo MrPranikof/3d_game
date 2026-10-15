@@ -6,6 +6,7 @@ import { validateAsset, type ValidationReport } from './pipeline/AssetValidator'
 import { GLBCache } from './pipeline/GLBCache';
 import { exportGLB, optimizeGLB, TextureEncodeCache } from './pipeline/GLBPipeline';
 import { flattenForGame } from './pipeline/Flatten';
+import { applyScannedBody, scannedBodyUrl } from './pipeline/ScannedBodies';
 import { generateLODs } from './pipeline/LODBuilder';
 import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
@@ -231,6 +232,11 @@ export class SingleAIModelFactory extends EventTarget {
         const { root, animations } = this.procedural.build(spec, t);
         const report = validateAsset(root, spec);
         if (report.missingNodes.length) throw new Error(`${spec.id}: missing required nodes ${report.missingNodes.join(', ')}`);
+        const scanUrl = scannedBodyUrl(spec.id, t);
+        if (scanUrl) {
+          try { await applyScannedBody(root, scanUrl); }
+          catch (e) { console.warn(`${spec.id}: scanned body unavailable, keeping procedural`, e); }
+        }
         const keepNames = new Set([...spec.requiredNodes, 'Interior_Gunner', 'Cage', 'Weapon', 'Door_RL', 'Door_RR']);
         const mats = this.procedural.materials;
         flattenForGame(root, {
