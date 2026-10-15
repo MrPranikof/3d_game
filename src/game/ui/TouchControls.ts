@@ -253,6 +253,8 @@ export class TouchControls {
         else this.input.touchMove.set(0, 1);
       } else if (tr.kind === 'dstickL') {
         this.input.touchStick.yaw = 0;
+        // Stabilize: throttle = climb rate, so the stick re-centres to hover when released
+        if (this.input.droneStab) { this.throttle = 0.5; this.input.touchStick.throttle = 0.5; }
         (this.dL.firstElementChild as HTMLElement).style.transform = `translate(0px, ${(0.5 - this.throttle) * 80}px)`;
       } else if (tr.kind === 'dstickR') {
         this.input.touchStick.pitch = this.input.touchStick.roll = 0;

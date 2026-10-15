@@ -7,7 +7,7 @@ import type { Loop } from '../core/Audio';
 import type { InputFrame } from '../core/Input';
 import { G, groups } from '../core/Physics';
 import type { GameContext } from '../GameContext';
-import { MAIN_ROAD } from '../world/MapLayout';
+import { HALF, MAIN_ROAD } from '../world/MapLayout';
 import type { Soldier } from './Soldier';
 
 /**
@@ -192,9 +192,16 @@ export class Vehicle implements Damageable, Attacker {
     for (const i of this.interiors) i.visible = false;
     this.turret.traverse((o) => { if ((o as THREE.Mesh).isMesh || (o as THREE.LOD).isLOD) o.visible = true; });
     this.setThermal(false);
-    // dismount on the left side
-    const side = new THREE.Vector3(-Math.cos(this.heading), 0, Math.sin(this.heading)).multiplyScalar(this.half.x + 1.2);
-    const p = this.position.clone().add(side);
+    // dismount left, else right, rear, front — first spot that is not inside a wall
+    const right = new THREE.Vector3(Math.cos(this.heading), 0, -Math.sin(this.heading));
+    const fwd = new THREE.Vector3(-Math.sin(this.heading), 0, -Math.cos(this.heading));
+    const spots = [right.clone().multiplyScalar(-(this.half.x + 1.2)), right.clone().multiplyScalar(this.half.x + 1.2), fwd.clone().multiplyScalar(-(this.half.z + 1.5)), fwd.clone().multiplyScalar(this.half.z + 1.5)];
+    let p = this.position.clone().add(spots[0]);
+    for (const o of spots) {
+      const c = this.position.clone().add(o);
+      c.y = this.ctx.terrain.heightAt(c.x, c.z);
+      if (!this.ctx.physics.overlapBall(c.clone().setY(c.y + 0.9), 0.45, G.STATIC | G.TREE | G.VEHICLE).length) { p = c; break; }
+    }
     p.y = this.ctx.terrain.heightAt(p.x, p.z) + 0.1;
     s.teleport(p);
     return s;
@@ -245,6 +252,8 @@ export class Vehicle implements Damageable, Attacker {
     const newHeading = this.heading + turnRate * dt;
     const fwd = new THREE.Vector3(-Math.sin(newHeading), 0, -Math.cos(newHeading));
     const next = this.position.clone().addScaledVector(fwd, this.speed * dt);
+    const lim = HALF - 8;
+    if (Math.abs(next.x) > lim || Math.abs(next.z) > lim) { next.x = THREE.MathUtils.clamp(next.x, -lim, lim); next.z = THREE.MathUtils.clamp(next.z, -lim, lim); this.speed *= 0.5; }
     if (this.collide(next, newHeading)) {
       this.heading = newHeading;
       this.position.copy(next);

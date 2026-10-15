@@ -4,6 +4,7 @@ import type { AssetInstance } from '../../assets/pipeline/ModelLoader';
 import type { Team } from '../../assets/StylePreset';
 import { AMMO, type Attacker, type Damageable, type DamageInfo } from '../combat/Combat';
 import { G, groups } from '../core/Physics';
+import { HALF } from '../world/MapLayout';
 import type { GameContext } from '../GameContext';
 import type { Vehicle } from './Vehicle';
 
@@ -155,9 +156,15 @@ export class Soldier implements Damageable, Attacker {
     this.grounded = kcc!.computedGrounded();
     const t = this.body.translation();
     const next = { x: t.x + m.x, y: t.y + m.y, z: t.z + m.z };
-    // safety net: never sink below the terrain
+    // map boundary
+    const lim = HALF - 6;
+    next.x = Math.max(-lim, Math.min(lim, next.x));
+    next.z = Math.max(-lim, Math.min(lim, next.z));
+    // safety nets: never sink below the terrain, never get launched into the sky
+    // (nothing walkable on the map is higher than a roof)
     const ground = this.ctx.terrain.heightAt(next.x, next.z);
     if (next.y - half < ground - 0.3) { next.y = ground + half; this.velocity.y = 0; this.grounded = true; }
+    if (next.y - half > ground + 40) { next.y = ground + half + 0.1; this.velocity.set(0, 0, 0); }
     this.body.setNextKinematicTranslation(next);
     this.position.set(next.x, next.y - half, next.z);
     if (this.grounded && this.velocity.y < -1) this.velocity.y = -1;

@@ -44,6 +44,8 @@ export class Input {
   sensitivity = { infantry: 1, tank: 0.7, drone: 1, gyroInfantry: 1, gyroTank: 0.6, gyroDrone: 0.8 };
   invertY = false;
   gyroEnabled = false;
+  /** set by the drone each frame: Stabilize mode (touch throttle re-centres) */
+  droneStab = true;
 
   private keys = new Set<string>();
   private keyPressed = new Set<Action>();

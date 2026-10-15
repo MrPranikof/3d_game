@@ -325,6 +325,7 @@ export class Player {
     if (!this.soldier.alive) { d.kill(null); this.endDrone(); return; }
     if (f.pressed.has('exit') || f.pressed.has('drone') || f.pressed.has('interact')) { if (d.alive) d.armed ? d.detonate() : d.kill(null); }
     if (d.alive) {
+      this.ctx.input.droneStab = d.mode === 'stab';
       d.control(f, dt);
       d.cameraPose(this.ctx.camera);
       this.ctx.postfx.setNoise(d.noise, d.signalLost > 0 || d.battery <= 0);

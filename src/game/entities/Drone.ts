@@ -6,6 +6,7 @@ import type { Loop } from '../core/Audio';
 import type { InputFrame } from '../core/Input';
 import { G } from '../core/Physics';
 import type { GameContext } from '../GameContext';
+import { HALF } from '../world/MapLayout';
 import type { Soldier } from './Soldier';
 import type { Vehicle } from './Vehicle';
 
@@ -21,6 +22,7 @@ import type { Vehicle } from './Vehicle';
 const FPV_WARHEAD: ProjectileSpec = { ...AMMO.grenade, kind: 'fpv', explosive: { radius: 5, damage: 160, ap: 520, destroy: 3 } };
 const MAX_THRUST = 9.81 * 2.6;
 const HOVER = 1 / 2.6;
+const CEILING = 120; // m above ground
 
 export type DroneMode = 'stab' | 'acro';
 
@@ -78,7 +80,10 @@ export class Drone implements Attacker {
 
     // throttle: touch stick is absolute; keyboard/gamepad are rate inputs
     if (this.mode === 'stab') {
-      const climb = f.stick.throttle !== null ? (f.stick.throttle - 0.5) * 14 : f.stick.throttleRate * 7;
+      let climb = f.stick.throttle !== null ? (f.stick.throttle - 0.5) * 14 : f.stick.throttleRate * 7;
+      // flight-controller altitude ceiling (geofence)
+      const agl = this.pos.y - this.ctx.terrain.heightAt(this.pos.x, this.pos.z);
+      if (agl > CEILING - 10) climb = Math.min(climb, (CEILING - agl) * 0.5);
       const err = (lost ? -3 : climb) - this.vel.y;
       const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quat);
       this.throttle = THREE.MathUtils.clamp((HOVER + err * 0.06) / Math.max(0.4, up.y), 0, 1);
@@ -101,6 +106,12 @@ export class Drone implements Attacker {
   }
 
   private integrate(dt: number): void {
+    // ceiling also limits Acro: thrust is cut above it
+    const agl = this.pos.y - this.ctx.terrain.heightAt(this.pos.x, this.pos.z);
+    if (agl > CEILING) { this.throttle = Math.min(this.throttle, HOVER * 0.7); if (this.vel.y > 0) this.vel.y *= 0.85; }
+    // geofence at the map edge
+    const lim = HALF + 40;
+    if (Math.abs(this.pos.x) > lim || Math.abs(this.pos.z) > lim) this.signalLost = Math.max(this.signalLost, 1);
     // attitude: body rates
     const dq = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.rates.x * dt, 0, this.rates.z * dt, 'XYZ'));
     this.quat.multiply(dq);
