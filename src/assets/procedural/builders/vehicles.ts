@@ -38,6 +38,7 @@ interface Cfg {
   /** optional fit to reference drawings (tools/refs/*.json); all in vehicle space, m */
   fit?: {
     glacisLen: number;
+    noseY?: number;
     wheelZ: number[]; wheelY: number;
     idler: Circle; sprocket: Circle;
     skirt: [number, number]; // bottom, top
@@ -88,7 +89,20 @@ const CFG: Record<Variant, Cfg> = {
       leoTurret: { front: -1.3, rear: 3.0, wedgeTip: -2.6 },
     },
   },
-  bmp2: { L: 6.72, W: 3.15, trackW: 0.3, belly: 0.42, deck: 1.72, wheelR: 0.31, wheels: 6, rollers: 3, sprocketFront: true, turret: 'bmp', turretZ: -0.45, gunLen: 2.2, gunR: 0.035, era: 'none', cage: true, paint: 'paint_ru_green', skirts: 'none', driverX: -0.55 },
+  // fitted to assets-src/refs/bmp2_side.webp / _top.webp (144.6 px/m side, 133 px/m top)
+  bmp2: {
+    L: 6.72, W: 3.3, trackW: 0.3, belly: 0.42, deck: 1.85, wheelR: 0.3, wheels: 6, rollers: 3, sprocketFront: true, turret: 'bmp', turretZ: 0.55, gunLen: 1.76, gunR: 0.035, era: 'none', cage: false, paint: 'paint_ru_green', skirts: 'none', driverX: -0.55,
+    fit: {
+      glacisLen: 1.95, noseY: 1.25,
+      wheelZ: [-1.45, -0.78, -0.11, 0.57, 1.27, 1.99], wheelY: 0.36,
+      sprocket: { z: -2.19, y: 0.73, r: 0.27 }, idler: { z: 2.71, y: 0.78, r: 0.3 },
+      skirt: [0, 0], sideEra: { z: [], y: 0, w: 0, h: 0 }, drum: { y: 0, r: 0 },
+      turretScale: [1.22, 0.82, 1.2],
+      rearBin: [0, 0, 0, 0, 0, 0],
+      trunnion: [0, 0.34, -0.85],
+      cage: [0, 0, 0, 0, 0],
+    },
+  },
 };
 
 export function buildTrackedVehicle(kit: Kit, variant: Variant, id: string): THREE.Group {
@@ -132,7 +146,7 @@ function buildHull(kit: Kit, c: Cfg, variant: Variant, hull: THREE.Group): void 
   const isBmp = variant === 'bmp2';
   const isLeo = c.turret === 'leo';
   const glacisLen = c.fit?.glacisLen ?? (isBmp ? 2.1 : isLeo ? 1.9 : 1.55);
-  const noseY = isBmp ? yB + 0.5 : yB + 0.55;
+  const noseY = c.fit?.noseY ?? (isBmp ? yB + 0.5 : yB + 0.55);
 
   // lower hull (between tracks)
   p.add(kit.profileX([[h, yB + 0.12], [h, yD - 0.06], [h - 0.08, yD], [-h + glacisLen, yD], [-h, noseY], [-h + 0.55, yB], [h - 0.3, yB]], inner, 0.03), c.paint);
@@ -159,7 +173,7 @@ function buildHull(kit: Kit, c: Cfg, variant: Variant, hull: THREE.Group): void 
     }
     for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) p.add(kit.cylX(0.06, 0.06), 'gunmetal', T(sx * (c.W / 2 - 0.08), yD - 0.18, 0.4 + i * 0.6));
     // trim vane on nose
-    p.add(kit.box(inner - 0.2, 0.5, 0.04, 0.01), 'wood_planks', T(0, noseY + 0.3, -h + 0.25, deg(-40)));
+    if (!c.fit) p.add(kit.box(inner - 0.2, 0.5, 0.04, 0.01), 'wood_planks', T(0, noseY + 0.3, -h + 0.25, deg(-40)));
   } else if (c.era === 'k5' || c.era === 'relikt') {
     glacisPlace(p, kit, -h + 0.02, noseY + 0.05, -h + glacisLen - 0.05, yD, 6, 2, inner - 0.05, 0.14, 'era_block');
   } else if (c.era === 'k1') {
@@ -386,10 +400,6 @@ function buildTrack(kit: Kit, c: Cfg, side: 'L' | 'R', hull: THREE.Group): void 
   ip.add(kit.cylX(0.1, c.trackW * 0.9, 12), 'gunmetal');
   for (let i = 0; i < 6; i++) ip.add(kit.box(c.trackW * 0.47, 0.05, idler.r * 1.6), 'gunmetal', T(0, 0, 0, (i / 6) * Math.PI));
   ip.emit(inn);
-  // mud clods on the lower run
-  const mp = new PartBuilder(kit);
-  for (let i = 0; i < 10; i++) mp.add(kit.sphere(0.08 + (i % 3) * 0.03, 7).scale(1.6, 0.6, 1.2), 'mud', T(((i * 37) % 7) / 7 * c.trackW * 0.6 - c.trackW * 0.3, thick + 0.01, frontZ + (i / 10) * (rearZ - frontZ)));
-  mp.emit(tn);
 }
 
 // ───────────────────────────── interiors ─────────────────────────────
@@ -605,7 +615,7 @@ function buildLeoTurret(kit: Kit, c: Cfg, turret: THREE.Group, variant: Variant)
 function buildBmpTurret(kit: Kit, c: Cfg, turret: THREE.Group): void {
   const p = new PartBuilder(kit);
   const P = c.paint;
-  p.add(kit.lathe([[0, 0.6], [0.45, 0.58], [0.82, 0.32], [0.9, 0.08], [0.88, 0], [0, 0]], kit.radial + 4).scale(1, 1, 1.05), P);
+  p.add(kit.lathe([[0, 0.6], [0.45, 0.58], [0.82, 0.32], [0.9, 0.08], [0.88, 0], [0, 0]], kit.radial + 4).scale(...(c.fit?.turretScale ?? [1, 1, 1.05])), P);
   p.add(kit.cyl(0.8, 0.82, 0.06), 'gunmetal');
   // commander + gunner hatches, periscopes
   p.add(kit.cyl(0.26, 0.26, 0.06), P, T(-0.32, 0.62, 0.15));
@@ -622,7 +632,7 @@ function buildBmpTurret(kit: Kit, c: Cfg, turret: THREE.Group): void {
   p.emit(turret);
   smokeLaunchers(kit, turret, [0, 1, 2].flatMap((i) => [[-0.55 - i * 0.08, 0.42, 0.45 + i * 0.12, deg(110)], [0.55 + i * 0.08, 0.42, 0.45 + i * 0.12, deg(-110)]] as [number, number, number, number][]), P);
   if (c.cage) cage(kit, turret, 2.0, 2.2, 0.6, 1.2, 0.1);
-  buildCannon(kit, c, turret, [0, 0.36, -0.75], 'bmp');
+  buildCannon(kit, c, turret, c.fit?.trunnion ?? [0, 0.36, -0.75], 'bmp');
   gunnerStation(kit, turret, 0.3, 0.1, 0.0);
 }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import refAtlases from './refAtlases.json';
 
 /**
  * Reference-projected texturing for procedural vehicles.
@@ -11,37 +12,30 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
  * single reference wheel. UVs are baked, so turret yaw / gun pitch / wheel spin keep the paint.
  */
 
-interface View { u0: number; su: number; v0: number; sv: number }
+type Axis = 'x' | 'y' | 'z';
+interface View { normal: Axis; u: Axis; v: Axis; u0: number; su: number; v0: number; sv: number; range?: [Axis, number, number]; minScore?: number }
 export interface RefAtlas {
-  id: string;
-  size: number;
-  side: View; // u = u0 + su·z, v = v0 + sv·y
-  top: View; // u = u0 + su·z, v = v0 + sv·x
-  patch: View & { vMin: number; vMax: number }; // u = u0 + su·x, v = v0 + sv·y
+  w: number;
+  h: number;
+  /** faces pick the view whose `normal` axis their normal points along most */
+  views: View[];
+  /** plain paint for faces no view covers (fronts of tanks, undersides, interiors) */
+  patch: { u: Axis | 'xz'; v: Axis; u0: number; su: number; v0: number; sv: number; vMin: number; vMax: number };
   /** reference road wheel centre (z, y) in vehicle space, for shared wheel geometry */
   wheel?: [number, number];
+  /** atlas rows [y0, y1) of each view strip (debug) */
+  strips?: [number, number][];
+  /** buildings: faces pointing into the footprint (interior wall sides) get the plain patch */
+  inward?: boolean;
+  /** node names left with their procedural materials */
+  skipNodes?: string[];
 }
 
-// constants printed by tools/ref-atlas.mjs
-export const REF_ATLASES: Record<string, RefAtlas> = {
-  t72b3: {
-    id: 't72b3', size: 2048,
-    side: { u0: 1164.8, su: 211.97, v0: 801.79, sv: -211.97 },
-    top: { u0: 892, su: -208, v0: 1235, sv: 208 },
-    patch: { u0: 1024, su: 150, v0: 1853.5, sv: -150, vMin: 1661, vMax: 2046 },
-    wheel: [-0.54, 0.5],
-  },
-  leo2a6: {
-    id: 'leo2a6', size: 2048,
-    side: { u0: 1213, su: 197.6, v0: 928, sv: -197.6 },
-    top: { u0: 759, su: -165.6, v0: 1342, sv: 165.6 },
-    patch: { u0: 1024, su: 150, v0: 1874, sv: -150, vMin: 1702, vMax: 2046 },
-    wheel: [-0.8, 0.45],
-  },
-};
+// written by tools/ref-atlas.mjs
+export const REF_ATLASES = refAtlases as unknown as Record<string, RefAtlas>;
 
-const NO_PROJECT_MATS = /^(track_links|glass_optic|cage_net|emissive|interior_shell|rust)/;
-const NO_PROJECT_NODES = new Set(['Cage', 'Interior_Cockpit', 'Interior_Gunner']);
+const NO_PROJECT_MATS = /^(track_links|glass_optic|cage_net|emissive|interior_shell|rust|brick_raw|bark_charred)/;
+const NO_PROJECT_NODES = new Set(['Cage', 'Interior_Cockpit', 'Interior_Gunner', 'Partition', 'Floor']);
 
 const textures = new Map<string, { map: THREE.Texture; normal: THREE.Texture }>();
 let preload: Promise<void> | null = null;
@@ -74,6 +68,46 @@ export function preloadRefTextures(): Promise<void> {
   return preload;
 }
 
+/** Dev aid (tools/preview.html?dbg=<id>): flat colour per atlas strip to see which view each face uses. */
+export function debugRefStrips(id: string): void {
+  const a = REF_ATLASES[id], t = textures.get(id);
+  if (!a?.strips || !t) return;
+  const cv = document.createElement('canvas');
+  cv.width = a.w; cv.height = a.h;
+  const g = cv.getContext('2d')!;
+  ['#d33', '#3b3', '#36d', '#dd3', '#d3d'].forEach((c, i) => { const s = a.strips![i]; if (s) { g.fillStyle = c; g.fillRect(0, s[0], a.w, s[1] - s[0]); } });
+  g.fillStyle = '#888'; g.fillRect(0, a.patch.vMin - 2, a.w, a.h);
+  t.map.image = cv; t.map.needsUpdate = true;
+}
+
+// ── photo trees (tools/foliage-atlas.mjs) ──
+let treeTex: { cut: THREE.Texture } | null = null;
+let treePreload: Promise<void> | null = null;
+
+export function preloadTreeTextures(): Promise<void> {
+  treePreload ??= (async () => {
+    try {
+      const base = `${import.meta.env.BASE_URL}models/ref/`;
+      const cut = new THREE.Texture(await loadImage(`${base}tree_acacia_cut.png`));
+      cut.colorSpace = THREE.SRGBColorSpace; cut.anisotropy = 4; cut.needsUpdate = true;
+      treeTex = { cut };
+    } catch (e) {
+      console.warn(e);
+    }
+  })();
+  return treePreload;
+}
+
+export function hasTreeTextures(): boolean {
+  return treeTex !== null;
+}
+
+let cutMat: THREE.MeshStandardMaterial | null = null;
+/** Cut-out acacia photos (left/right halves of the texture) for crossed-billboard trees. */
+export function treeCutMaterial(): THREE.MeshStandardMaterial {
+  return (cutMat ??= new THREE.MeshStandardMaterial({ name: 'ref_tree_cut', map: treeTex!.cut, color: 0xb8b8b8, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 }));
+}
+
 export function hasRefTexture(id: string): boolean {
   return textures.has(id);
 }
@@ -83,7 +117,7 @@ function refMaterial(id: string): THREE.MeshStandardMaterial {
   let m = matCache.get(id);
   if (!m) {
     const t = textures.get(id)!;
-    m = new THREE.MeshStandardMaterial({ name: `ref_${id}`, map: t.map, normalMap: t.normal, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.82, metalness: 0.15 });
+    m = new THREE.MeshStandardMaterial({ name: `ref_${id}`, map: t.map, normalMap: t.normal, normalScale: new THREE.Vector2(0.6, 0.6), roughness: 0.85, metalness: 0.03 });
     matCache.set(id, m);
   }
   return m;
@@ -102,7 +136,7 @@ export function applyRefProjection(root: THREE.Object3D, id: string): void {
   const done = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
 
   const skip = (o: THREE.Object3D): boolean => {
-    for (let a: THREE.Object3D | null = o; a && a !== root; a = a.parent) if (NO_PROJECT_NODES.has(a.name)) return true;
+    for (let a: THREE.Object3D | null = o; a && a !== root; a = a.parent) if (NO_PROJECT_NODES.has(a.name) || atlas.skipNodes?.includes(a.name)) return true;
     return false;
   };
   const wheelNode = (o: THREE.Object3D): THREE.Object3D | null => {
@@ -138,25 +172,35 @@ function project(src: THREE.BufferGeometry, m: THREE.Matrix4, a: RefAtlas): THRE
   const uv = new Float32Array(pos.count * 2);
   const nm = new THREE.Matrix3().getNormalMatrix(m);
   const p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
-  const S = a.size;
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3(), c = new THREE.Vector3();
+  const pick = (q: THREE.Vector3, ax: Axis | 'xz') => (ax === 'xz' ? q.x + q.z : q[ax]);
   for (let t = 0; t < pos.count; t += 3) {
     for (let k = 0; k < 3; k++) p[k].fromBufferAttribute(pos, t + k).applyMatrix4(m);
-    n.crossVectors(e1.subVectors(p[1], p[0]), e2.subVectors(p[2], p[0]));
-    if (n.lengthSq() < 1e-14) { // degenerate: use the stored normal if any
-      if (g.attributes.normal) n.fromBufferAttribute(g.attributes.normal, t).applyMatrix3(nm);
-      else n.set(0, 1, 0);
-    }
+    // prefer authored normals: sliver triangles (extrusions with holes) give noisy cross products
+    if (g.attributes.normal) {
+      n.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) n.add(e1.fromBufferAttribute(g.attributes.normal, t + k));
+      n.applyMatrix3(nm);
+    } else n.crossVectors(e1.subVectors(p[1], p[0]), e2.subVectors(p[2], p[0]));
+    if (n.lengthSq() < 1e-14) n.set(0, 1, 0);
     n.normalize();
-    const ax = Math.abs(n.x), ay = Math.abs(n.y);
+    c.copy(p[0]).add(p[1]).add(p[2]).multiplyScalar(1 / 3);
+    let best: View | null = null, score = -1;
+    for (const v of a.views) {
+      if (v.range && (c[v.range[0]] < v.range[1] || c[v.range[0]] > v.range[2])) continue;
+      const sc = v.normal === 'y' ? (n.y > 0.55 ? n.y : 0) : Math.abs(n[v.normal]);
+      if (sc >= (v.minScore ?? 0.45) && sc > score) { score = sc; best = v; }
+    }
+    if (best && a.inward) {
+      // horizontal normal pointing back towards the footprint centre → interior side of a wall
+      if (n.x * c.x + n.z * c.z < -0.05 && Math.abs(n.y) < 0.6) best = null;
+    }
     for (let k = 0; k < 3; k++) {
-      const { x, y, z } = p[k];
       let u: number, v: number;
-      if (n.y > 0.55 && n.y >= ax) { u = a.top.u0 + a.top.su * z; v = a.top.v0 + a.top.sv * x; }
-      else if (ax >= 0.45 && ax >= ay * 0.9) { u = a.side.u0 + a.side.su * z; v = a.side.v0 + a.side.sv * y; }
-      else { u = a.patch.u0 + a.patch.su * x; v = Math.min(a.patch.vMax, Math.max(a.patch.vMin, a.patch.v0 + a.patch.sv * y)); }
-      uv[(t + k) * 2] = u / S;
-      uv[(t + k) * 2 + 1] = 1 - v / S;
+      if (best) { u = best.u0 + best.su * p[k][best.u]; v = best.v0 + best.sv * p[k][best.v]; }
+      else { const P = a.patch; u = P.u0 + P.su * pick(p[k], P.u); v = Math.min(P.vMax, Math.max(P.vMin, P.v0 + P.sv * p[k][P.v])); }
+      uv[(t + k) * 2] = u / a.w;
+      uv[(t + k) * 2 + 1] = 1 - v / a.h;
     }
   }
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));

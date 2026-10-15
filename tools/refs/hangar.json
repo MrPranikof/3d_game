@@ -1,0 +1,13 @@
+{
+  "id": "hangar",
+  "outDir": "public/models/ref",
+  "views": [
+    { "file": "assets-src/refs/hangar_side.webp", "crop": [0, 330, 1024, 452], "normal": "x", "u": "z", "v": "y", "map": [509.5, 31.8, 448, -20.8], "range": ["y", -1, 4.8] },
+    { "file": "assets-src/refs/hangar_side.webp", "crop": [0, 120, 1024, 352], "normal": "x", "u": "z", "v": "y", "map": [509.5, 31.8, 610.3, -55.9], "range": ["y", 4.8, 99], "minScore": 0 },
+    { "file": "assets-src/refs/hangar_side.webp", "crop": [40, 150, 160, 445], "normal": "z", "u": "x", "v": "y", "map": [97, 6.4, 442, -34.5] }
+  ],
+  "patch": { "file": "assets-src/refs/hangar_side.webp", "crop": [300, 140, 700, 200], "pxPerM": 32, "u": "z", "v": "x" },
+  "inward": true,
+  "skipNodes": ["Foundation"],
+  "normalStrength": 2.0
+}

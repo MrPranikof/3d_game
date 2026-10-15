@@ -1,0 +1,10 @@
+{
+  "id": "bmp2",
+  "outDir": "public/models/ref",
+  "views": [
+    { "file": "assets-src/refs/bmp2_side.webp", "crop": [0, 150, 1024, 610], "normal": "x", "u": "z", "v": "y", "map": [511.8, 144.6, 595.5, -144.6] },
+    { "file": "assets-src/refs/bmp2_top.webp", "crop": [30, 135, 1000, 630], "normal": "y", "u": "z", "v": "x", "map": [503, -133, 383, 133] }
+  ],
+  "patch": { "file": "assets-src/refs/bmp2_side.webp", "crop": [300, 330, 560, 380], "pxPerM": 150, "u": "x", "v": "y" },
+  "wheel": [-0.11, 0.36]
+}

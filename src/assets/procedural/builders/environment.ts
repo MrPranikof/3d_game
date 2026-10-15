@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { pad } from '../../AssetRegistry';
 import { type Kit, node, PartBuilder, T } from '../Kit';
 import { RNG } from '../noise';
+import { applyRefProjection, hasRefTexture, hasTreeTextures, treeCutMaterial } from '../RefTexture';
 
 /**
  * «Малая Токмачка» environment set: rural brick houses, collective-farm hangar,
@@ -74,7 +75,7 @@ interface WallDef {
 }
 
 /** Emits each wall segment as its own Wall_Cluster node, centred on the fragment. */
-function emitWall(kit: Kit, rng: RNG, root: THREE.Object3D, wall: WallDef, counter: { i: number }): void {
+function emitWall(kit: Kit, rng: RNG, root: THREE.Object3D, wall: WallDef, counter: { i: number }, opt: { shutters: boolean; glass: number; doorLeaf: number } = { shutters: true, glass: 0.4, doorLeaf: 0.5 }): void {
   for (const s of wall.segments) {
     const outline = segmentOutline(rng, s, wall.peakAt);
     const keptHoles = s.holes.filter((h) => h.hole.every(([x, y]) => pointInPoly(x, y, outline)));
@@ -104,10 +105,10 @@ function emitWall(kit: Kit, rng: RNG, root: THREE.Object3D, wall: WallDef, count
         m(kit.box(0.05, hh, 0.05), 'wood_planks', cx, cy);
         m(kit.box(w, 0.05, 0.05), 'wood_planks', cx, y0 + hh * 0.65);
         m(kit.box(w + 0.1, 0.04, wall.thickness + 0.1), 'concrete', cx, y0 - 0.02, 0);
-        if (rng.chance(0.4)) m(kit.quad(w / 2 - 0.05, hh * 0.6), 'glass_window', cx - w / 4, cy - hh * 0.1, 0);
+        if (rng.chance(opt.glass)) m(opt.shutters ? kit.quad(w - 0.12, hh - 0.12) : kit.box(w - 0.12, hh - 0.12, 0.02), 'glass_window', cx, cy, 0);
         // shutters (Ukrainian village style), one sometimes torn off
-        if (rng.chance(0.7)) m(kit.box(w / 2, hh, 0.03), 'wood_planks', x0 - w / 4 - 0.02, cy, -wall.thickness / 2 - 0.03);
-      } else if (rng.chance(0.5)) {
+        if (opt.shutters && rng.chance(0.7)) m(kit.box(w / 2, hh, 0.03), 'wood_planks', x0 - w / 4 - 0.02, cy, -wall.thickness / 2 - 0.03);
+      } else if (rng.chance(opt.doorLeaf)) {
         m(kit.box(w - 0.12, hh - 0.06, 0.05), 'wood_planks', cx, cy - 0.03, 0);
       }
     }
@@ -118,6 +119,7 @@ function emitWall(kit: Kit, rng: RNG, root: THREE.Object3D, wall: WallDef, count
 // ─────────────────────────── rural brick house ───────────────────────────
 
 export function buildHouse(kit: Kit, id: string, damage: number): THREE.Group {
+  if (hasRefTexture('house')) return buildRefHouse(kit, id, damage);
   const rng = new RNG(id);
   const root = node(id, null);
   const W = 8, D = 10, H = 3.0, plinth = 0.5, t = 0.38, ridge = 2.4;
@@ -198,6 +200,133 @@ export function buildHouse(kit: Kit, id: string, damage: number): THREE.Group {
   return root;
 }
 
+// ───────────── white-washed khata fitted to assets-src/refs/house_front / house_gable ─────────────
+
+/** Convex polygon (3D, planar) → closed slab of thickness `t` along the polygon normal. */
+function slab(pts: THREE.Vector3[], t: number): THREE.BufferGeometry {
+  const n = new THREE.Vector3().crossVectors(pts[1].clone().sub(pts[0]), pts[2].clone().sub(pts[0])).normalize();
+  const top = pts.map((p) => p.clone().addScaledVector(n, t));
+  const pos: number[] = [];
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for (let i = 1; i < pts.length - 1; i++) { tri(top[0], top[i], top[i + 1]); tri(pts[0], pts[i + 1], pts[i]); }
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    tri(pts[i], pts[j], top[j]); tri(pts[i], top[j], top[i]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Sutherland–Hodgman clip of a planar polygon to z ∈ [z0, z1]. */
+function clipZ(pts: THREE.Vector3[], z0: number, z1: number): THREE.Vector3[] {
+  const clip = (poly: THREE.Vector3[], keep: (p: THREE.Vector3) => boolean, zc: number) => {
+    const out: THREE.Vector3[] = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ia = keep(a), ib = keep(b);
+      if (ia) out.push(a);
+      if (ia !== ib) out.push(a.clone().lerp(b, (zc - a.z) / (b.z - a.z)));
+    }
+    return out;
+  };
+  return clip(clip(pts, (p) => p.z >= z0, z0), (p) => p.z <= z1, z1);
+}
+
+function buildRefHouse(kit: Kit, id: string, damage: number): THREE.Group {
+  const rng = new RNG(id);
+  const root = node(id, null);
+  // measured on the reference (82 px/m long side, 90×74 px/m gable)
+  const W = 7.2, D = 9.0, plinth = 0.36, H = 3.15, t = 0.38;
+  const foundation = node('Foundation', root);
+  const fp = new PartBuilder(kit);
+  fp.add(kit.box(W + 0.1, plinth, D + 0.1), 'concrete', T(0, plinth / 2, 0));
+  const floor = node('Floor', foundation);
+  const flp = new PartBuilder(kit);
+  flp.add(kit.box(W - 2 * t, 0.06, D - 2 * t), 'wood_planks', T(0, plinth + 0.03, 0));
+  flp.emit(floor);
+  fp.add(kit.box(0.6, 0.16, 1.5), 'concrete', T(-W / 2 - 0.3, 0.08, 2.57)); // step at the long-side door
+  fp.add(kit.box(1.4, 0.16, 0.55), 'concrete', T(-1.83, 0.08, -D / 2 - 0.28)); // step at the gable door
+  for (let i = 0; i < Math.round(damage * 30); i++) {
+    const a = rng.range(0, Math.PI * 2), r = rng.range(W / 2, W / 2 + 1.6);
+    fp.add(kit.box(rng.range(0.15, 0.5), rng.range(0.08, 0.25), rng.range(0.15, 0.4), 0.02), rng.chance(0.7) ? 'brick_raw' : 'slate_roof', T(Math.cos(a) * r * 0.9, 0.1, Math.sin(a) * r * 1.1, rng.range(0, 1), rng.range(0, 3), rng.range(0, 1)));
+  }
+  fp.emit(foundation);
+  // inner partition keeps the silhouette readable when walls are blown out (not projected)
+  const part = node('Partition', foundation);
+  const pp = new PartBuilder(kit);
+  pp.add(kit.box(W - 2 * t, H, 0.12), 'plaster_brick', T(0, plinth + H / 2, 0.4));
+  pp.emit(part);
+
+  type Hole = WallSegment['holes'][number];
+  const rect = (u0: number, u1: number, v0: number, v1: number, kind: 'window' | 'door'): Hole =>
+    ({ hole: [[u0, Math.max(v0, 0.02)], [u1, Math.max(v0, 0.02)], [u1, v1], [u0, v1]], kind });
+  // openings in model coordinates, exactly where they are painted
+  const longOpen = [rect(-3.1, -1.76, 0.88, 2.75, 'window'), rect(-0.83, 0.53, 0.88, 2.75, 'window'), rect(1.9, 3.24, 0, 2.63, 'door')];
+  const gableOpen = [rect(1.18, 2.15, 1.08, 2.71, 'window'), rect(-2.39, -1.27, 0.05, 2.64, 'door')];
+  const flip = (hs: Hole[]) => hs.map((h) => ({ ...h, hole: h.hole.map(([u, v]) => [-u, v] as P2).reverse() }));
+  /** 4 segments with cuts moved off the openings */
+  const segments = (len: number, holes: Hole[]): WallSegment[] => {
+    const inHole = (u: number) => holes.some((h) => { const xs = h.hole.map((q) => q[0]); return u > Math.min(...xs) - 0.12 && u < Math.max(...xs) + 0.12; });
+    const cuts = [-len / 4, 0, len / 4].map((c) => { for (let d = 0; d < len / 2; d += 0.05) { if (!inHole(c + d)) return c + d; if (!inHole(c - d)) return c - d; } return c; });
+    const edges = [-len / 2, ...cuts, len / 2];
+    return [0, 1, 2, 3].map((i) => {
+      const u0 = edges[i], u1 = edges[i + 1];
+      const own = holes.filter((h) => h.hole.every(([u]) => u > u0 && u < u1));
+      const jag = rng.chance(damage) ? rng.range(0.3, 0.9) * damage : 0;
+      const shell = !own.length && rng.chance(damage * 0.8) ? [{ hole: blobHole(rng, (u0 + u1) / 2, rng.range(0.8, 1.8), rng.range(0.35, 0.6)), kind: 'shell' as const }] : [];
+      return { u0, u1, top: () => H, holes: [...own, ...shell], jagged: jag };
+    });
+  };
+  // wall-plane u: walls[0] u = x, walls[1] u = −x, walls[2] u = −z, walls[3] u = z
+  const walls: WallDef[] = [
+    { len: W, thickness: t, place: T(0, plinth, -D / 2 + t / 2), mat: 'plaster_brick', segments: segments(W, gableOpen) },
+    { len: W, thickness: t, place: T(0, plinth, D / 2 - t / 2, 0, Math.PI), mat: 'plaster_brick', segments: segments(W, flip(gableOpen)) },
+    { len: D - 2 * t, thickness: t, place: T(-W / 2 + t / 2, plinth, 0, 0, Math.PI / 2), mat: 'plaster_brick', segments: segments(D - 2 * t, flip(longOpen)) },
+    { len: D - 2 * t, thickness: t, place: T(W / 2 - t / 2, plinth, 0, 0, -Math.PI / 2), mat: 'plaster_brick', segments: segments(D - 2 * t, longOpen) },
+  ];
+  const counter = { i: 0 };
+  for (const w of walls) emitWall(kit, rng, root, w, counter, { shutters: false, glass: 1, doorLeaf: damage < 0.3 ? 1 : 0.5 });
+
+  // half-hip roof: main slopes rise to the ridge, hips cut the gable ends up to a timber gable
+  const Ee = 3.65, R = 6.4, f = 0.69, Xh = W / 2 + 0.62, Zh = D / 2 + 0.62, Zg = Zh - 2.27;
+  const yh = Ee + f * (R - Ee), xh = Xh * (1 - f);
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  let rc = 0;
+  const roofNode = (pts: THREE.Vector3[], extra?: (p: PartBuilder, c: THREE.Vector3) => void) => {
+    const c = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+    const n = node(`Roof_Cluster_${pad(++rc)}`, root, c.x, c.y, c.z);
+    const p = new PartBuilder(kit);
+    const missing = rng.chance(damage * 0.7);
+    const local = pts.map((q) => q.clone().sub(c));
+    if (!missing) p.add(slab(local, 0.06), 'slate_roof');
+    else for (const dz of [-0.6, 0.6]) {
+      const a = local[0], b = local[local.length - 1];
+      p.add(kit.box(0.08, 0.12, a.distanceTo(b) * 0.8), 'logs', T((a.x + b.x) / 2, (a.y + b.y) / 2, dz));
+    }
+    extra?.(p, c);
+    p.emit(n);
+  };
+  for (const sx of [-1, 1]) {
+    const main = [V(sx * Xh, Ee, -Zh), V(sx * Xh, Ee, Zh), V(sx * xh, yh, Zg), V(0, R, Zg), V(0, R, -Zg), V(sx * xh, yh, -Zg)];
+    const ordered = sx > 0 ? main : main.slice().reverse();
+    for (const [z0, z1] of [[-Zh, -1.2], [-1.2, 1.2], [1.2, Zh]]) {
+      roofNode(clipZ(ordered, z0, z1), sx > 0 && z0 > 0 ? (p, c) => p.add(kit.box(0.5, 1.7, 0.5), 'brick_raw', T(0.74 - c.x, 6.2 - c.y, 1.75 - c.z)) : undefined);
+    }
+  }
+  for (const sz of [-1, 1]) {
+    const hip = [V(-Xh, Ee, sz * Zh), V(Xh, Ee, sz * Zh), V(xh, yh, sz * Zg), V(-xh, yh, sz * Zg)];
+    roofNode(sz > 0 ? hip.slice().reverse() : hip, (p, c) => {
+      // vertical plank gable under the ridge
+      const tri = [V(-xh, yh, sz * Zg), V(xh, yh, sz * Zg), V(0, R, sz * Zg)].map((q) => q.sub(c));
+      p.add(slab(sz < 0 ? tri : tri.slice().reverse(), 0.04), 'wood_planks');
+    });
+  }
+  applyRefProjection(root, 'house');
+  return root;
+}
+
 // ─────────────────────────── collective-farm hangar ───────────────────────────
 
 export function buildHangar(kit: Kit, id: string): THREE.Group {
@@ -261,6 +390,7 @@ export function buildHangar(kit: Kit, id: string): THREE.Group {
     p.add(kit.extrude(inner.map(([x, y]) => [x * 0.99, y - 0.02] as P2).concat(inner.map(([x, y]) => [x * 0.97, y - 0.22] as P2).reverse()), 0.15), 'rust');
     p.emit(n);
   }
+  if (hasRefTexture('hangar')) applyRefProjection(root, 'hangar');
   return root;
 }
 
@@ -388,7 +518,47 @@ function foliageCards(kit: Kit, p: PartBuilder, rng: RNG, center: THREE.Vector3,
   }
 }
 
+/**
+ * Acacia from the reference photos (assets-src/refs/acacia_a/b): the cut-out trees on three
+ * crossed vertical planes. Real silhouette and bark from any side; the lower 1.2 m (stump) is
+ * its own Foundation slice so felling keeps the destruction contract.
+ */
+function buildPhotoAcacia(kit: Kit, id: string): THREE.Group {
+  const rng = new RNG(id);
+  const root = node(id, null);
+  const H = 10; // tree height, m
+  // measured on the 765×1024 photos: crown top / ground line / trunk base x
+  const photos = [{ top: 66, ground: 964, baseX: 340 }, { top: 50, ground: 984, baseX: 360 }];
+  const cutY = 1.2;
+  const mat = treeCutMaterial();
+  const plane = (ph: (typeof photos)[number], half: 0 | 1, yaw: number, y0: number, y1: number, origin: THREE.Vector3) => {
+    const k = H / (ph.ground - ph.top); // m per px
+    const w = 765 * k, xOff = (382.5 - ph.baseX) * k;
+    const vAt = (y: number) => 1 - (ph.ground - y / k) / 1024; // texture v for height y
+    const g = new THREE.PlaneGeometry(w, y1 - y0);
+    const uv = g.attributes.uv as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (half + uv.getX(i)) / 2, uv.getY(i) > 0.5 ? vAt(y1) : vAt(y0));
+    const nrm = g.attributes.normal as THREE.BufferAttribute;
+    for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, 0, 1, 0); // lit like foliage, no dark back side
+    g.applyMatrix4(T(xOff * Math.cos(yaw), (y0 + y1) / 2, -xOff * Math.sin(yaw), 0, yaw).premultiply(new THREE.Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z)));
+    return g;
+  };
+  // four planes 45° apart: from any side at least two are within 25° of face-on
+  const yaws = [0, 1, 2, 3].map((i) => (i * Math.PI) / 4 + rng.range(0, Math.PI));
+  const fp = new PartBuilder(kit);
+  yaws.forEach((yaw, i) => fp.add(plane(photos[i % 2], (i % 2) as 0 | 1, yaw, -0.6, cutY, new THREE.Vector3()), 'foliage'));
+  fp.emit(node('Foundation', root));
+  const up = node('Trunk_Upper', root, 0, cutY, 0);
+  const tp = new PartBuilder(kit);
+  yaws.forEach((yaw, i) => tp.add(plane(photos[i % 2], (i % 2) as 0 | 1, yaw, cutY, H * 1.02, up.position), 'foliage'));
+  tp.emit(up);
+  for (let i = 0; i < 4; i++) node(`Crown_Cluster_${pad(i + 1)}`, up, 0, 6 - cutY, 0);
+  root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.material = mat; });
+  return root;
+}
+
 export function buildTree(kit: Kit, id: string, kind: 'poplar' | 'acacia' | 'scorched'): THREE.Group {
+  if (kind === 'acacia' && hasTreeTextures()) return buildPhotoAcacia(kit, id);
   const rng = new RNG(id);
   const root = node(id, null);
   const Ht = kind === 'poplar' ? 16 : kind === 'acacia' ? 10 : 9;

@@ -58,7 +58,8 @@ export class Vegetation {
       const m = new THREE.InstancedMesh(l.geometry, l.material, maxInstances);
       m.count = 0;
       m.castShadow = shadow;
-      m.receiveShadow = true;
+      // photo billboards self-shadow into black sheets when seen edge-on
+      m.receiveShadow = (l.material as THREE.Material).name !== 'ref_tree_cut';
       m.frustumCulled = false;
       this.group.add(m);
       return m;
@@ -122,6 +123,19 @@ export class Vegetation {
     this.group.add(m);
   }
 
+  /** No grass through house / hangar floors (footprints in building-local axes, small margin). */
+  private insideBuilding(x: number, z: number): boolean {
+    for (const b of this.layout.buildings) {
+      const half = b.id === 'hangar' ? [9.2, 15.2] : [3.8, 4.7];
+      const dx = x - b.x, dz = z - b.z;
+      if (Math.abs(dx) > 18 || Math.abs(dz) > 18) continue;
+      const c = Math.cos(b.rot), s = Math.sin(b.rot);
+      const lx = dx * c - dz * s, lz = dx * s + dz * c;
+      if (Math.abs(lx) < half[0] && Math.abs(lz) < half[1]) return true;
+    }
+    return false;
+  }
+
   private scatterGrass(cx: number, cz: number): void {
     const m = this.grass!;
     const cap = m.instanceMatrix.count;
@@ -140,6 +154,7 @@ export class Vegetation {
         const x = (i + hash2(i + 7, j)) * cell, z = (j + hash2(i, j + 7)) * cell;
         if ((x - cx) ** 2 + (z - cz) ** 2 > R * R) continue;
         if (this.layout.roads.some((r) => distToPolyline(x, z, r.pts) < r.width * 0.6)) continue;
+        if (this.insideBuilding(x, z)) continue;
         p.set(x, this.terrain.heightAt(x, z) - 0.05, z);
         q.setFromAxisAngle(up, h * 40);
         const sc = 0.85 + hash2(j, i) * 0.5;

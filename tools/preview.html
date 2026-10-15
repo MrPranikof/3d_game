@@ -4,11 +4,12 @@
 // /tools/preview.html?id=tank_t72b3&v=az,el;az,el  (degrees; az 0 = from the front)
 import * as THREE from 'three';
 import { ProceduralEngine } from '/src/assets/procedural/ProceduralEngine.ts';
-import { preloadRefTextures } from '/src/assets/procedural/RefTexture.ts';
+import { debugRefStrips, preloadRefTextures, preloadTreeTextures } from '/src/assets/procedural/RefTexture.ts';
 import { getSpec } from '/src/assets/AssetRegistry.ts';
 import { QUALITY } from '/src/assets/StylePreset.ts';
 const q = new URLSearchParams(location.search);
-await preloadRefTextures();
+await Promise.all([preloadRefTextures(), preloadTreeTextures()]);
+if (q.get('dbg')) debugRefStrips(q.get('dbg'));
 const { root } = new ProceduralEngine(QUALITY.desktop).build(getSpec(q.get('id')), q.get('team') || 'A');
 if (q.get('yaw')) { const t = root.getObjectByName('Turret'); if (t) t.rotation.y = +q.get('yaw'); }
 const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });

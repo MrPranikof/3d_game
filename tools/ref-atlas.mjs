@@ -1,17 +1,21 @@
-// Builds a projection atlas for a reference-textured vehicle from orthographic side/top images
-// (assets-src/refs/*). Layout (2048×2048): side view strip, top view strip, plain-paint patch.
-// Background is inpainted from the object so projected faces that land slightly outside the
-// silhouette never pick up white. Also writes a tangent-space normal map from luminance.
+// Builds a projection atlas for a reference-textured asset from orthographic concept images
+// (assets-src/refs/*) and records its mapping in src/assets/procedural/refAtlases.json.
 //
-// usage: node tools/ref-atlas.mjs tools/refs/t72b3.json
-// The config gives, for each view, the pixel crop and the image→vehicle mapping
-//   side: px = a + b·z, py = c + d·y        top: px = a + b·z, py = c + d·x
-// and the script prints the atlas-space constants for src/assets/procedural/RefTexture.ts.
+// usage: node tools/ref-atlas.mjs tools/refs/<id>.json
+//
+// Config: { id, outDir, views: [View], patch: { file?, crop, pxPerM, u, v }, wheel?, inward?, normalStrength? }
+//   View = { file, crop: [x0,y0,x1,y1], normal: 'x'|'y'|'z', u: axis, v: axis, map: [a, b, c, d], range?: [axis, min, max] }
+//   meaning: faces whose normal points mostly along `normal` sample this view at
+//   px = a + b·(model `u` coordinate), py = c + d·(model `v` coordinate)   (source image pixels, metres);
+//   `range` limits a view to faces whose centroid lies in [min, max] along an axis (piecewise fits).
+// Views are stacked as horizontal strips (each scaled to the atlas width), the plain-paint patch
+// goes last. Background is inpainted from the object so faces that land slightly outside the
+// painted silhouette never pick up white. Also writes a tangent-space normal map from luminance.
 import sharp from 'sharp';
 import fs from 'node:fs';
 
 const cfg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const S = 2048;
+const W = 2048, PATCH_H = cfg.patch.height ?? 256;
 
 async function load(file, crop, width) {
   const [x0, y0, x1, y1] = crop;
@@ -22,12 +26,27 @@ async function load(file, crop, width) {
 }
 
 /** Fill background (near-white) pixels from the nearest object pixels by iterative dilation. */
-function inpaint(img) {
+function inpaint(img, erode) {
   const { data, w, h } = img;
-  const known = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) known[i] = Math.min(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) < 222 ? 1 : 0;
+  // background = near-white pixels connected to the image border (white plaster inside the
+  // silhouette is not background)
+  const known = new Uint8Array(w * h).fill(1);
+  const white = (i) => Math.min(data[i * 3], data[i * 3 + 1], data[i * 3 + 2]) >= 222;
+  const stack = [];
+  for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+  for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+  while (stack.length) {
+    const i = stack.pop();
+    if (!known[i] || !white(i)) continue;
+    known[i] = 0;
+    const x = i % w, y = (i - x) / w;
+    if (x > 0) stack.push(i - 1);
+    if (x < w - 1) stack.push(i + 1);
+    if (y > 0) stack.push(i - w);
+    if (y < h - 1) stack.push(i + w);
+  }
   // erode the mask to drop the painted black outline and its anti-aliased halo
-  for (let pass = 0; pass < (img.erode ?? 7); pass++) {
+  for (let pass = 0; pass < erode; pass++) {
     const k2 = known.slice();
     for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
       const i = y * w + x;
@@ -56,45 +75,53 @@ function inpaint(img) {
   return img;
 }
 
-const side = inpaint(await load(cfg.side.file, cfg.side.crop, S));
-const top = inpaint(await load(cfg.top.file, cfg.top.crop, S));
-const patchH = S - side.h - top.h;
-if (patchH < 160) throw new Error(`atlas overflow: side ${side.h} + top ${top.h}`);
-const [px0, py0, px1, py1] = cfg.patch.crop; // plain paint region (source px of patch.file, default: top image)
-const { data: patchData } = await sharp(cfg.patch.file ?? cfg.top.file).extract({ left: px0, top: py0, width: px1 - px0, height: py1 - py0 })
-  .resize(S, patchH, { fit: 'fill' }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+const strips = [];
+// a strip is at most 2.5× its source width (narrow crops stay narrow and short)
+for (const v of cfg.views) strips.push(inpaint(await load(v.file, v.crop, Math.min(W, Math.round((v.crop[2] - v.crop[0]) * 2.5))), cfg.erode ?? 7));
+const H = Math.ceil((strips.reduce((s, x) => s + x.h, 0) + PATCH_H) / 4) * 4;
+const patchH = H - strips.reduce((s, x) => s + x.h, 0);
+const [px0, py0, px1, py1] = cfg.patch.crop;
+const { data: patchData } = await sharp(cfg.patch.file ?? cfg.views[0].file).extract({ left: px0, top: py0, width: px1 - px0, height: py1 - py0 })
+  .resize(W, patchH, { fit: 'fill' }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
 
-const atlas = Buffer.alloc(S * S * 3);
-side.data.copy(atlas, 0);
-top.data.copy(atlas, side.h * S * 3);
-patchData.copy(atlas, (side.h + top.h) * S * 3);
+const atlas = Buffer.alloc(W * H * 3);
+let off = 0;
+const views = [], stripRows = [];
+cfg.views.forEach((v, i) => {
+  const s = strips[i];
+  for (let y = 0; y < s.h; y++) s.data.copy(atlas, ((off + y) * W) * 3, y * s.w * 3, (y + 1) * s.w * 3);
+  views.push({ normal: v.normal, u: v.u, v: v.v, u0: (v.map[0] - v.crop[0]) * s.k, su: v.map[1] * s.k, v0: off + (v.map[2] - v.crop[1]) * s.k, sv: v.map[3] * s.k, ...(v.range ? { range: v.range } : {}), ...(v.minScore !== undefined ? { minScore: v.minScore } : {}) });
+  stripRows.push([off, off + s.h]);
+  off += s.h;
+});
+patchData.copy(atlas, off * W * 3);
 
-// normal map from blurred luminance (painted outlines read as shallow grooves)
-const lum = new Float32Array(S * S);
-for (let i = 0; i < S * S; i++) lum[i] = (0.3 * atlas[i * 3] + 0.59 * atlas[i * 3 + 1] + 0.11 * atlas[i * 3 + 2]) / 255;
-const nrm = Buffer.alloc(S * S * 3);
+// normal map from luminance (painted outlines read as shallow grooves)
+const lum = new Float32Array(W * H);
+for (let i = 0; i < W * H; i++) lum[i] = (0.3 * atlas[i * 3] + 0.59 * atlas[i * 3 + 1] + 0.11 * atlas[i * 3 + 2]) / 255;
+const nrm = Buffer.alloc(W * H * 3);
 const st = cfg.normalStrength ?? 2.5;
-for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-  const L = (xx, yy) => lum[Math.min(S - 1, Math.max(0, yy)) * S + Math.min(S - 1, Math.max(0, xx))];
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  const L = (xx, yy) => lum[Math.min(H - 1, Math.max(0, yy)) * W + Math.min(W - 1, Math.max(0, xx))];
   const dx = (L(x + 1, y) - L(x - 1, y)) * st, dy = (L(x, y + 1) - L(x, y - 1)) * st;
   const l = Math.hypot(dx, dy, 1);
-  const i = (y * S + x) * 3;
+  const i = (y * W + x) * 3;
   nrm[i] = ((-dx / l) * 0.5 + 0.5) * 255; nrm[i + 1] = ((dy / l) * 0.5 + 0.5) * 255; nrm[i + 2] = ((1 / l) * 0.5 + 0.5) * 255;
 }
 fs.mkdirSync(cfg.outDir, { recursive: true });
-await sharp(atlas, { raw: { width: S, height: S, channels: 3 } }).jpeg({ quality: 88 }).toFile(`${cfg.outDir}/${cfg.id}_albedo.jpg`);
-await sharp(nrm, { raw: { width: S, height: S, channels: 3 } }).blur(0.6).jpeg({ quality: 90 }).toFile(`${cfg.outDir}/${cfg.id}_normal.jpg`);
+await sharp(atlas, { raw: { width: W, height: H, channels: 3 } }).jpeg({ quality: 88 }).toFile(`${cfg.outDir}/${cfg.id}_albedo.jpg`);
+await sharp(nrm, { raw: { width: W, height: H, channels: 3 } }).blur(0.6).jpeg({ quality: 90 }).toFile(`${cfg.outDir}/${cfg.id}_normal.jpg`);
 
-// atlas-space constants: u = u0 + su·(z), v = v0 + sv·(y or x), in atlas pixels
-const view = (v, img, vOff) => ({
-  u0: (v.map[0] - v.crop[0]) * img.k, su: v.map[1] * img.k,
-  v0: vOff + (v.map[2] - v.crop[1]) * img.k, sv: v.map[3] * img.k,
+const r2 = (o) => (typeof o === 'number' ? +o.toFixed(2) : Array.isArray(o) ? o.map(r2) : o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, r2(v)])) : o);
+const entry = r2({
+  w: W, h: H, views, strips: stripRows,
+  patch: { u: cfg.patch.u ?? 'x', v: cfg.patch.v ?? 'y', u0: W / 2, su: cfg.patch.pxPerM, v0: off + patchH / 2, sv: -cfg.patch.pxPerM, vMin: off + 2, vMax: H - 2 },
+  ...(cfg.wheel ? { wheel: cfg.wheel } : {}),
+  ...(cfg.inward ? { inward: true } : {}),
+  ...(cfg.skipNodes ? { skipNodes: cfg.skipNodes } : {}),
 });
-const out = {
-  size: S,
-  side: view(cfg.side, side, 0),
-  top: view(cfg.top, top, side.h),
-  patch: { u0: S / 2, su: cfg.patch.pxPerM, v0: side.h + top.h + patchH / 2, sv: -cfg.patch.pxPerM, vMin: side.h + top.h + 2, vMax: S - 2 },
-};
-const r = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? +v.toFixed(2) : r(v)]));
-console.log(JSON.stringify(r(out)));
+const registry = 'src/assets/procedural/refAtlases.json';
+const all = fs.existsSync(registry) ? JSON.parse(fs.readFileSync(registry, 'utf8')) : {};
+all[cfg.id] = entry;
+fs.writeFileSync(registry, JSON.stringify(Object.fromEntries(Object.entries(all).sort()), null, 1) + '\n');
+console.log(cfg.id, JSON.stringify(entry));
