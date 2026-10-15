@@ -11,7 +11,8 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
  * fitted bone offsets are copied over and the procedural body mesh is replaced by the scan.
  */
 const BODIES: Record<string, string> = {
-  'soldier:A': 'models/tripo/soldier_A.glb',
+  'soldier:A': 'models/tripo/soldier_A.gltf.json',
+  'soldier:B': 'models/tripo/soldier_B.gltf.json',
 };
 
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
@@ -33,7 +34,8 @@ export async function applyScannedBody(root: THREE.Object3D, url: string): Promi
   root.updateMatrixWorld(true);
 
   // 2. drop the procedural body meshes
-  const body = root.getObjectByName('Body');
+  // direct child only: the rifle under WeaponMount_R has its own 'Body' node
+  const body = root.children.find((c) => c.name === 'Body');
   if (!body) throw new Error('soldier template has no Body node');
   const old: THREE.Object3D[] = [];
   body.traverse((o) => { if ((o as THREE.Mesh).isMesh) old.push(o); });
