@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
 
-// Step-1 architecture: WebGPU renderer (auto-fallback WebGL2), Rapier WASM in a worker,
-// WebRTC/WebTransport networking. Step 2 only needs the asset pipeline + showroom.
+// Relative base so the build works from any sub-path (static hosting, artifact pages).
 export default defineConfig({
+  base: './',
   server: {
     host: true,
     // Same-origin proxy so the Tripo3D API key never reaches the browser.
@@ -12,7 +13,13 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    chunkSizeWarningLimit: 2048,
+    chunkSizeWarningLimit: 4096,
+    rollupOptions: {
+      input: {
+        game: resolve(__dirname, 'index.html'),
+        showroom: resolve(__dirname, 'showroom.html'),
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['meshoptimizer'],

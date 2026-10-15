@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "Browser WebGPU tactical MilSim \u2014 Step 2: SingleAIModelFactory (unified 3D asset generation pipeline)",
+  "description": "Browser WebGPU tactical MilSim — Step 2: SingleAIModelFactory (unified 3D asset generation pipeline)",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -12,6 +12,7 @@
     "proxy:tripo": "node server/tripo-proxy.mjs"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",

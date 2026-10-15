@@ -14,7 +14,7 @@ export const GLOBAL_STYLE_PREFIX =
   'realistic dirt and wear, 8k normal and roughness maps, clean game-ready topology, exported as hierarchical .glb:';
 
 /** Bump whenever generator output changes — invalidates every IndexedDB cache entry. */
-export const FACTORY_VERSION = '2.0.0';
+export const FACTORY_VERSION = '2.1.1';
 
 export const UNIT_SCALE_METERS = 1;
 

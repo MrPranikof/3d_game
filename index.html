@@ -6,14 +6,16 @@
     <meta name="theme-color" content="#11140f" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" href="data:," />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <title>Малая Токмачка — Asset Factory</title>
-    <link rel="stylesheet" href="/src/showroom/showroom.css" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Малая Токмачка</title>
+    <link rel="stylesheet" href="./src/game/ui/game.css" />
   </head>
   <body>
-    <canvas id="viewport"></canvas>
+    <canvas id="game"></canvas>
     <div id="ui"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div class="rotate">Поверните устройство горизонтально</div>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

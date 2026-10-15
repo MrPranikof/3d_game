@@ -349,24 +349,33 @@ function buildDriverStation(kit: Kit, c: Cfg, hull: THREE.Group): void {
   const ic = node('Interior_Cockpit', hull, c.driverX, c.belly + 0.1, -h + glacis + 0.45);
   const p = new PartBuilder(kit);
   const sh = c.deck - c.belly - 0.2;
-  p.add(kit.box(1.0, sh, 1.3), 'interior_shell', T(0, sh / 2, 0.1));
+  // interior walls as thin panels; the upper front band stays open = the driver's vision blocks,
+  // so from inside the camera sees the outside world through it (hull faces are back-face culled)
+  const W = 1.0, D = 1.3, th = 0.02, slit = 0.22;
+  p.add(kit.box(W, th, D), 'interior_shell', T(0, 0, 0.1));
+  p.add(kit.box(W, th, D), 'interior_shell', T(0, sh, 0.1));
+  p.add(kit.box(th, sh, D), 'interior_shell', T(-W / 2, sh / 2, 0.1));
+  p.add(kit.box(th, sh, D), 'interior_shell', T(W / 2, sh / 2, 0.1));
+  p.add(kit.box(W, sh, th), 'interior_shell', T(0, sh / 2, 0.1 + D / 2));
+  p.add(kit.box(W, sh - slit - 0.08, th), 'interior_shell', T(0, (sh - slit - 0.08) / 2, 0.1 - D / 2));
+  p.add(kit.box(W, 0.08, th), 'interior_shell', T(0, sh - 0.04, 0.1 - D / 2));
   // seat (reclined Soviet-style)
   p.add(kit.box(0.45, 0.1, 0.45, 0.03), 'fabric_olive', T(0, 0.2, 0.3));
   p.add(kit.box(0.45, 0.5, 0.1, 0.03), 'fabric_olive', T(0, 0.45, 0.55, deg(-25)));
   // tillers / yoke, pedals
   if (c.turret === 'leo') {
-    p.add(kit.torus(0.16, 0.02, 12, Math.PI), 'polymer_black', T(0, 0.55, -0.25, deg(-70)));
+    p.add(kit.torus(0.16, 0.02, 12, Math.PI), 'polymer_black', T(0, 0.3, -0.2, deg(-70)));
   } else {
-    for (const sx of [-1, 1]) p.add(kit.cyl(0.018, 0.018, 0.5, 8), 'gunmetal', T(sx * 0.22, 0.35, -0.15, deg(-25)));
+    for (const sx of [-1, 1]) p.add(kit.cyl(0.018, 0.018, 0.4, 8), 'gunmetal', T(sx * 0.22, 0.28, -0.1, deg(-25)));
   }
   for (const sx of [-1, 0, 1]) p.add(kit.box(0.08, 0.02, 0.14), 'gunmetal', T(sx * 0.15, 0.08, -0.45, deg(-40)));
   // dashboard + display
-  p.add(kit.box(0.7, 0.18, 0.08), 'gunmetal', T(0, 0.75, -0.48, deg(20)));
-  p.add(kit.box(0.2, 0.12, 0.01), 'emissive_screen', T(0.15, 0.78, -0.43, deg(20)));
+  p.add(kit.box(0.7, 0.16, 0.08), 'gunmetal', T(0, 0.3, -0.48, deg(-30)));
+  p.add(kit.box(0.2, 0.1, 0.01), 'emissive_screen', T(0.15, 0.33, -0.43, deg(-30)));
   // vision blocks seen from inside
-  for (let i = -1; i <= 1; i++) p.add(kit.box(0.13, 0.12, 0.05), 'glass_optic', T(i * 0.15, sh - 0.12, -0.5));
+  for (let i = -1; i <= 1; i++) p.add(kit.box(0.04, slit, 0.04), 'gunmetal', T(i * 0.3, sh - 0.08 - slit / 2, 0.1 - D / 2));
   p.emit(ic);
-  node('Cam_Driver', ic, 0, sh - 0.15, -0.3);
+  node('Cam_Driver', ic, 0, sh - 0.08 - slit / 2, 0.1 - D / 2 + 0.12);
 }
 
 // ───────────────────────────── turrets ─────────────────────────────

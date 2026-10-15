@@ -112,7 +112,8 @@ export function synthesize(name: string, def: RecipeDef, size: number): PBRTextu
 
   // Sobel height → tangent-space normal (wrapping keeps the map tileable).
   const nrm = new Uint8ClampedArray(N * 4);
-  const s = (def.normalStrength ?? 2.0) * (size / 512);
+  // resolution-independent bump: Sobel slope is measured in texels of a 512² reference
+  const s = (def.normalStrength ?? 2.0) * Math.sqrt(size / 512);
   const H = (x: number, y: number) => height[((y + size) % size) * size + ((x + size) % size)];
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {

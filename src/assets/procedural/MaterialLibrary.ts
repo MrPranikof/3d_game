@@ -187,7 +187,7 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
   glass_optic: { tile: 0.2, metalness: 0.2, roughness: 0.1, recipe: (_u, _v, t) => { setRGB(t, 0x0d1a22); t.rough = 0.05; t.metal = 0.3; } },
   glass_window: { tile: 1, transparent: true, opacity: 0.35, recipe: (u, v, t, { n }) => { setRGB(t, 0x70878f); t.rough = 0.1 + n.fbm(u, v, 3, 4) * 0.4; t.metal = 0.1; } },
   interior_shell: {
-    tile: 1.5, side: THREE.BackSide, normalStrength: 1.2,
+    tile: 1.5, side: THREE.DoubleSide, normalStrength: 1.2,
     recipe: (u, v, t, { n }) => { setRGB(t, 0x9db3a2, 0.8 + n.fbm(u, v, 4, 4) * 0.25); t.rough = 0.65; t.h = n.fbm(u, v, 3, 20) * 0.2; mixRGB(t, 0x3a3631, smoothstep(0.65, 0.85, n.fbm(u, v, 3, 3)) * 0.5); },
   },
   emissive_red: { tile: 0.1, emissive: 0xff2010, emissiveIntensity: 4, recipe: (_u, _v, t) => { setRGB(t, 0x400000); t.rough = 0.2; } },
@@ -236,7 +236,7 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
       const brickCol = lerp(0.85, 1.1, tint);
       // whitewashed lime plaster with spalls exposing the brick
       const spall = smoothstep(0.6, 0.66, n.fbm(u, v, 5, 2) * 0.8 + n2.fbm(u, v, 3, 6) * 0.3);
-      const plasterR = 0.78 + n.fbm(u, v, 4, 6) * 0.12;
+      const plasterR = 0.6 + n.fbm(u, v, 4, 6) * 0.12;
       if (spall > 0.5) {
         if (mortar) { setRGB(t, 0x9b9483); t.h = 0.3; t.rough = 0.95; } else { setRGB(t, 0x8e4a33, brickCol); t.h = 0.55 + n.fbm(u, v, 3, 40) * 0.15; t.rough = 0.88; }
       } else {
@@ -350,6 +350,27 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
       t.h = shade; t.rough = 0.7;
     },
   },
+  grass_tuft: {
+    tile: 1, authoredUV: true, alpha: true, side: THREE.DoubleSide, normalStrength: 0.5,
+    // vertical card with tapered blades, alpha-tested
+    recipe: (u, v, t, { n }) => {
+      let a = 0;
+      for (let i = 0; i < 14; i++) {
+        const x0 = ((i * 0.618) % 1) * 0.9 + 0.05;
+        const lean = (((i * 0.377) % 1) - 0.5) * 0.25;
+        const hgt = 0.55 + ((i * 0.731) % 1) * 0.42;
+        const vy = 1 - v; // 0 at bottom
+        if (vy > hgt) continue;
+        const cx = x0 + lean * (vy / hgt) ** 2;
+        const w = 0.025 * (1 - vy / hgt) + 0.003;
+        if (Math.abs(u - cx) < w) a = 1;
+      }
+      t.a = a;
+      setRGB(t, 0x6b7034, 0.55 + (1 - v) * 0.6 + n.fbm(u, v, 2, 4) * 0.2);
+      mixRGB(t, 0xa39a5c, smoothstep(0.5, 0.8, n.fbm(u, v, 3, 2)) * 0.6);
+      t.rough = 0.9; t.h = 0.5;
+    },
+  },
   soil: {
     tile: 2.5, normalStrength: 3,
     recipe: (u, v, t, { n, n2 }) => {
@@ -360,6 +381,58 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
       const stone = smoothstep(0.82, 0.9, n2.fbm(u, v, 3, 24));
       mixRGB(t, 0x8a8478, stone * 0.7);
       t.h = m * 0.7 + stone * 0.3; t.rough = 0.95;
+    },
+  },
+  // ───── terrain layers («Малая Токмачка» steppe) ─────
+  grass_steppe: {
+    tile: 6, normalStrength: 2.2, period: 64,
+    recipe: (u, v, t, { n, n2 }) => {
+      const blades = n.ridged(u * 2, v * 2, 4, 16);
+      const patch = n2.fbm(u, v, 4, 3);
+      setRGB(t, 0x56602f, 0.7 + blades * 0.45);
+      mixRGB(t, 0x8a8248, smoothstep(0.45, 0.75, patch) * 0.7); // dry late-summer grass
+      mixRGB(t, 0x4a3b2a, smoothstep(0.7, 0.85, n.fbm(u, v, 3, 8)) * 0.6); // bare soil
+      t.h = blades * 0.7 + patch * 0.3; t.rough = 0.95;
+    },
+  },
+  stubble: {
+    tile: 4, normalStrength: 2.5,
+    recipe: (u, v, t, { n }) => {
+      const rows = 0.5 + 0.5 * Math.sin(v * Math.PI * 2 * 18);
+      const straw = n.ridged(u * 6, v, 3, 8);
+      setRGB(t, 0x9c8a55, 0.75 + straw * 0.35);
+      mixRGB(t, 0x5a4a32, (1 - rows) * 0.35);
+      t.h = rows * 0.4 + straw * 0.4; t.rough = 0.95;
+    },
+  },
+  plowed: {
+    tile: 4, normalStrength: 4,
+    recipe: (u, v, t, { n }) => {
+      const furrow = 0.5 + 0.5 * Math.sin(u * Math.PI * 2 * 10 + n.fbm(u, v, 2, 2) * 2);
+      const clods = n.fbm(u, v, 5, 12);
+      setRGB(t, 0x553a22, 0.6 + clods * 0.5 + furrow * 0.2);
+      t.h = furrow * 0.6 + clods * 0.4; t.rough = 0.97;
+    },
+  },
+  road_dirt: {
+    tile: 5, normalStrength: 3,
+    recipe: (u, v, t, { n, n2 }) => {
+      const rut = Math.exp(-((((u * 2) % 1) - 0.3) ** 2) / 0.004) + Math.exp(-((((u * 2) % 1) - 0.7) ** 2) / 0.004);
+      const m = n.fbm(u, v, 5, 4);
+      setRGB(t, 0x7a6146, 0.75 + m * 0.4);
+      mixRGB(t, 0x3f3324, rut * 0.5 + smoothstep(0.6, 0.8, n2.fbm(u, v, 4, 3)) * 0.4);
+      t.h = m * 0.6 - rut * 0.3 + n2.fbm(u, v, 3, 30) * 0.2; t.rough = lerp(0.95, 0.6, rut * 0.5);
+    },
+  },
+  asphalt: {
+    tile: 4, normalStrength: 1.8,
+    recipe: (u, v, t, { n, n2 }) => {
+      const agg = n.fbm(u, v, 3, 60);
+      setRGB(t, 0x3a3a38, 0.75 + agg * 0.4);
+      const crack = smoothstep(0.9, 0.96, n2.ridged(u, v, 4, 3));
+      mixRGB(t, 0x1a1a19, crack);
+      mixRGB(t, 0x6a5d48, smoothstep(0.62, 0.85, n.fbm(u, v, 3, 2)) * 0.4); // dust/mud
+      t.h = agg * 0.5 - crack * 0.4; t.rough = 0.85;
     },
   },
   sandbag: {

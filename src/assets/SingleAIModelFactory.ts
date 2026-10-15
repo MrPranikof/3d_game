@@ -5,8 +5,9 @@ import { detectQualityTier, FACTORY_VERSION, GLOBAL_STYLE_PREFIX, QUALITY, type 
 import { validateAsset, type ValidationReport } from './pipeline/AssetValidator';
 import { GLBCache } from './pipeline/GLBCache';
 import { exportGLB, optimizeGLB, TextureEncodeCache } from './pipeline/GLBPipeline';
+import { flattenForGame } from './pipeline/Flatten';
 import { generateLODs } from './pipeline/LODBuilder';
-import { type AssetInstance, type AssetTemplate, ModelLoader } from './pipeline/ModelLoader';
+import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
 import { TripoProvider } from './providers/TripoProvider';
 
@@ -70,6 +71,7 @@ export class SingleAIModelFactory extends EventTarget {
   private readonly textureCache = new TextureEncodeCache();
   private readonly loader = new ModelLoader();
   private readonly templates = new Map<string, Promise<AssetTemplate>>();
+  private readonly gameTemplates = new Map<string, Promise<AssetTemplate>>();
   private readonly inflight = new Map<string, Promise<GeneratedAsset>>();
   private readonly results = new Map<string, GeneratedAsset>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -209,6 +211,56 @@ export class SingleAIModelFactory extends EventTarget {
       p.catch(() => this.templates.delete(key));
     }
     return p;
+  }
+
+  /**
+   * Game fast path. With the procedural engine the model is built straight into memory
+   * (no .glb encode), flattened to a few draw calls per animated node, LOD'ed and returned.
+   * With the remote engine it falls back to the cached .glb path, so engines never mix.
+   */
+  loadForGame(id: string, team?: Team): Promise<AssetTemplate> {
+    if (this.engine !== 'procedural') return this.load(id, team);
+    const spec = getSpec(id);
+    const t = spec.teamVariants ? team ?? 'A' : undefined;
+    const key = this.cacheKey(id, t);
+    let p = this.gameTemplates.get(key);
+    if (!p) {
+      p = (this.queue = this.queue.then(async () => {
+        await nextFrame();
+        this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
+        const { root, animations } = this.procedural.build(spec, t);
+        const report = validateAsset(root, spec);
+        if (report.missingNodes.length) throw new Error(`${spec.id}: missing required nodes ${report.missingNodes.join(', ')}`);
+        const keepNames = new Set([...spec.requiredNodes, 'Interior_Gunner', 'Cage', 'Weapon', 'Door_RL', 'Door_RR']);
+        const mats = this.procedural.materials;
+        flattenForGame(root, {
+          keep: (o) => keepNames.has(o.name),
+          remap: spec.category === 'infantry'
+            ? { glass_optic: 'polymer_black', rubber_black: 'polymer_black', emissive_red: 'polymer_black', steel_bare: 'gunmetal', fabric_olive: t === 'B' ? 'fabric_olive' : 'fabric_coyote' }
+            : spec.category === 'environment' ? { glass_window: 'wood_planks' } : undefined,
+          resolveMaterial: (n) => mats.get(n),
+        });
+        root.userData = { assetId: spec.id, team: t ?? null, category: spec.category, lodDistances: spec.lodDistances, engine: 'procedural' };
+        await generateLODs(root, QUALITY[this.quality].lodRatios);
+        const scene = new THREE.Group();
+        scene.add(root);
+        foldLODs(scene, spec.lodDistances);
+        this.emit({ type: 'asset-done', id: spec.id, message: `${spec.id}${t ? `/${t}` : ''}: built for game (${report.triangles} tris)` });
+        return { scene, animations, meta: root.userData };
+      })) as Promise<AssetTemplate>;
+      this.gameTemplates.set(key, p);
+    }
+    return p;
+  }
+
+  /** Material library of the procedural engine (terrain & FX reuse the same PBR language). */
+  get materials() {
+    this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
+    return this.procedural.materials;
+  }
+
+  instantiateTemplate(t: AssetTemplate): AssetInstance {
+    return this.loader.instantiate(t);
   }
 
   /** Ready-to-add instance with node lookup map (Turret, Prop_FL, Wall_Cluster_05 …). */
