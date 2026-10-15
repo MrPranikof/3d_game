@@ -1,0 +1,10 @@
+{
+  "name": "Малая Токмачка — MilSim",
+  "short_name": "Токмачка",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#11140f",
+  "theme_color": "#11140f",
+  "icons": []
+}
