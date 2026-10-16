@@ -1,0 +1,137 @@
+{
+ "grass_steppe": {
+  "id": "dry_ground_rocks",
+  "size": 3,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "stubble": {
+  "id": "dry_ground_01",
+  "size": 3,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "plowed": {
+  "id": "farm_soil",
+  "size": 2,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "road_dirt": {
+  "id": "park_dirt",
+  "size": 3,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "mud": {
+  "id": "brown_mud_02",
+  "size": 1.3,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "asphalt": {
+  "id": "asphalt_02",
+  "size": 3,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "concrete": {
+  "id": "concrete_floor_worn_001",
+  "size": 3,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "wood_planks": {
+  "id": "old_planks_02",
+  "size": 2,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "bark": {
+  "id": "bark_brown_02",
+  "size": 1,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "brick_raw": {
+  "id": "brick_wall_02",
+  "size": 2,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "slate_roof": {
+  "id": "grey_roof_tiles_02",
+  "size": 1.5,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "plaster_brick": {
+  "id": "white_plaster_rough_02",
+  "size": 2,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "rust": {
+  "id": "rusty_metal_02",
+  "size": 1,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "corrugated_rust": {
+  "id": "rusty_corrugated_iron",
+  "size": 2,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "logs": {
+  "id": "bark_willow",
+  "size": 1,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ }
+}

@@ -520,27 +520,26 @@ function foliageCards(kit: Kit, p: PartBuilder, rng: RNG, center: THREE.Vector3,
 }
 
 /**
- * Acacia from the reference photos (assets-src/refs/acacia_a/b): the cut-out trees on three
+ * Deciduous tree from the reference photos (assets-src/refs/acacia_a/b): the cut-out trees on three
  * crossed vertical planes. Real silhouette and bark from any side; the lower 1.2 m (stump) is
  * its own Foundation slice so felling keeps the destruction contract.
  */
-function buildPhotoAcacia(kit: Kit, id: string): THREE.Group {
+function buildPhotoTree(kit: Kit, id: string, H: number, squeeze: number): THREE.Group {
   const rng = new RNG(id);
   const root = node(id, null);
-  const H = 10; // tree height, m
   // measured on the 765×1024 photos: crown top / ground line / trunk base x
   const photos = [{ top: 66, ground: 964, baseX: 340 }, { top: 50, ground: 984, baseX: 360 }];
   const cutY = 1.2;
   const mat = treeCutMaterial();
   const plane = (ph: (typeof photos)[number], half: 0 | 1, yaw: number, y0: number, y1: number, origin: THREE.Vector3) => {
     const k = H / (ph.ground - ph.top); // m per px
-    const w = 765 * k, xOff = (382.5 - ph.baseX) * k;
+    const w = 765 * k * squeeze, xOff = (382.5 - ph.baseX) * k * squeeze;
     const vAt = (y: number) => 1 - (ph.ground - y / k) / 1024; // texture v for height y
     const g = new THREE.PlaneGeometry(w, y1 - y0);
     const uv = g.attributes.uv as THREE.BufferAttribute;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, (half + uv.getX(i)) / 2, uv.getY(i) > 0.5 ? vAt(y1) : vAt(y0));
-    const nrm = g.attributes.normal as THREE.BufferAttribute;
-    for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, 0, 1, 0); // lit like foliage, no dark back side
+    // normals stay the true plane normal: the game material fades planes seen edge-on with it and
+    // lights the leaves with an up-facing normal of its own
     g.applyMatrix4(T(xOff * Math.cos(yaw), (y0 + y1) / 2, -xOff * Math.sin(yaw), 0, yaw).premultiply(new THREE.Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z)));
     return g;
   };
@@ -559,7 +558,8 @@ function buildPhotoAcacia(kit: Kit, id: string): THREE.Group {
 }
 
 export function buildTree(kit: Kit, id: string, kind: 'poplar' | 'acacia' | 'scorched'): THREE.Group {
-  if (kind === 'acacia' && hasTreeTextures()) return buildPhotoAcacia(kit, id);
+  // photo trees: acacia as photographed; windbreak poplars as the same crowns, narrowed and taller
+  if (kind !== 'scorched' && hasTreeTextures()) return kind === 'acacia' ? buildPhotoTree(kit, id, 10, 1) : buildPhotoTree(kit, id, 15, 0.5);
   const rng = new RNG(id);
   const root = node(id, null);
   const Ht = kind === 'poplar' ? 16 : kind === 'acacia' ? 10 : 9;

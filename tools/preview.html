@@ -6,9 +6,10 @@ import * as THREE from 'three';
 import { ProceduralEngine } from '/src/assets/procedural/ProceduralEngine.ts';
 import { debugRefStrips, preloadRefTextures, preloadTreeTextures, preloadWeaponRefs } from '/src/assets/procedural/RefTexture.ts';
 import { getSpec } from '/src/assets/AssetRegistry.ts';
+import { preloadPhotoTextures } from '/src/assets/procedural/MaterialLibrary.ts';
 import { QUALITY } from '/src/assets/StylePreset.ts';
 const q = new URLSearchParams(location.search);
-await Promise.all([preloadRefTextures(), preloadTreeTextures(), preloadWeaponRefs()]);
+await Promise.all([preloadPhotoTextures(), preloadRefTextures(), preloadTreeTextures(), preloadWeaponRefs()]);
 if (q.get('dbg')) debugRefStrips(q.get('dbg'));
 const { root } = new ProceduralEngine(QUALITY.desktop).build(getSpec(q.get('id')), q.get('team') || 'A');
 if (q.get('yaw')) { const t = root.getObjectByName('Turret'); if (t) t.rotation.y = +q.get('yaw'); }

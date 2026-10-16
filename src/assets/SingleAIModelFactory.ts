@@ -11,6 +11,7 @@ import { buildMixamoClips, loadMixamo } from './pipeline/MixamoClips';
 import { generateLODs } from './pipeline/LODBuilder';
 import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
+import { preloadPhotoTextures } from './procedural/MaterialLibrary';
 import { preloadRefTextures, preloadTreeTextures, preloadWeaponRefs } from './procedural/RefTexture';
 import { TripoProvider } from './providers/TripoProvider';
 
@@ -100,6 +101,7 @@ export class SingleAIModelFactory extends EventTarget {
     if (want === 'tripo' || (want === 'auto' && (await this.tripo.available()))) this.engineId = 'tripo';
     else this.engineId = 'procedural';
     if (renderer) await this.loader.attachRenderer(renderer);
+    await preloadPhotoTextures(); // photoscanned materials must be ready before the first build
     void this.cache.requestPersistence();
     this.emit({ type: 'status', message: `engine locked: ${this.engineId} · quality ${this.quality} · style ${STYLE_HASH}` });
     return this.engineId;

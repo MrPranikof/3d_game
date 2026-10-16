@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { attribute, float, instanceIndex, mix, positionLocal, positionWorld, sin, smoothstep, time, vec3 } from 'three/tsl';
+import { abs, attribute, cameraPosition, cameraViewMatrix, cross, dFdx, dFdy, dot, float, instanceIndex, mix, normalize, positionLocal, positionWorld, sin, smoothstep, texture, time, uv, vec3, vec4 } from 'three/tsl';
 import type { AssetTemplate } from '../../assets/pipeline/ModelLoader';
 import type { MaterialLibrary } from '../../assets/procedural/MaterialLibrary';
 import { RNG } from '../../assets/procedural/noise';
@@ -57,7 +57,7 @@ export class Vegetation {
       });
       return [...byMat].map(([material, geoms]) => ({ material, geometry: mergeIndexed(geoms) }));
     };
-    const near = collect(0), far = collect(2);
+    const near = collect(0).map(photoTreeLayer), far = collect(2).map(photoTreeLayer);
     const mk = (l: Layer, shadow: boolean) => {
       const m = new THREE.InstancedMesh(l.geometry, l.material, maxInstances);
       m.count = 0;
@@ -326,4 +326,27 @@ function grassTuftGeometry(blades: number, widen = 1): THREE.BufferGeometry {
   g.setIndex(idx);
   g.computeBoundingSphere();
   return g;
+}
+
+/**
+ * Photo billboard trees: planes seen edge-on dissolve (otherwise they read as white or black
+ * slabs), and the leaves are lit with an up-facing normal so no plane has a dark back side.
+ */
+const cutMats = new Map<THREE.Material, THREE.Material>();
+function photoTreeLayer(l: Layer): Layer {
+  if (l.material.name !== 'ref_tree_cut') return l;
+  let m = cutMats.get(l.material);
+  if (!m) {
+    const map = (l.material as THREE.MeshStandardMaterial).map!;
+    const mat = new THREE.MeshStandardNodeMaterial({ name: 'ref_tree_cut', side: THREE.DoubleSide, roughness: 0.85, metalness: 0, alphaTest: 0.45 });
+    const t = texture(map, uv());
+    // true face normal from screen-space derivatives (normalWorld follows the overridden lighting normal)
+    const faceN = normalize(cross(dFdx(positionWorld), dFdy(positionWorld)));
+    const facing = abs(dot(normalize(cameraPosition.sub(positionWorld)), faceN));
+    mat.colorNode = t.rgb.mul(0.78);
+    mat.opacityNode = t.a.mul(smoothstep(0.12, 0.38, facing));
+    mat.normalNode = normalize(cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
+    cutMats.set(l.material, (m = mat));
+  }
+  return { geometry: l.geometry, material: m };
 }

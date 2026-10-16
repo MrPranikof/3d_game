@@ -40,7 +40,7 @@ export class Environment {
     }
 
     // generous sky fill: shaded slopes and backlit foliage must stay readable, not black
-    scene.add(new THREE.HemisphereLight(0xa8c8ff, 0x7a6a44, 1.0));
+    scene.add(new THREE.HemisphereLight(0xc6d6ee, 0x7a6a44, 0.85)); // near-neutral: a saturated blue fill tints white plaster
     this.sun = new THREE.DirectionalLight(0xfff0d6, 3.4);
     this.sun.castShadow = true;
     const ms = quality === 'mobile' ? 1024 : quality === 'ultra' ? 4096 : 2048;

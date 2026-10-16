@@ -58,6 +58,8 @@ export class Terrain {
     };
     for (const b of layout.buildings) flatten(b.x, b.z, b.id === 'hangar' ? 19 : 7);
     for (const t of ['A', 'B'] as const) flatten(layout.spawns[t][0][0], layout.spawns[t][0][1], 30);
+    // level motor pools: tanks spawned on a 24° side slope at the map edge looked like they hovered
+    for (const t of ['A', 'B'] as const) for (const v of layout.vehicleSpawns[t]) flatten(v.x, v.z, 9);
     // trench channels
     for (const tr of layout.trenches) {
       for (let s = 0; s < tr.pts.length - 1; s++) {
@@ -142,7 +144,8 @@ export class Terrain {
 
     const splat = this.buildSplat();
     const L = (key: string) => mats.get(key);
-    const tex = (key: string, tile: number, which: 'map' | 'normalMap' = 'map') => texture(L(key)[which]!, positionWorld.xz.div(tile));
+    // photoscanned layers tile at their real size (a 3 m photo stretched to 9 m reads as blur)
+    const tex = (key: string, tile: number, which: 'map' | 'normalMap' = 'map') => texture(L(key)[which]!, positionWorld.xz.div(mats.photoSize(key) ? mats.photoSize(key)! * (tile > 20 ? 4 : 1) : tile));
     const sA = texture(splat.a, positionWorld.xz.div(MAP_SIZE).add(0.5));
     const sB = texture(splat.b, positionWorld.xz.div(MAP_SIZE).add(0.5));
     const macro = texture(L('soil').map!, positionWorld.xz.div(173)).r.mul(0.6).add(0.7);
@@ -163,7 +166,7 @@ export class Terrain {
     col = col.mul(macro);
     // beyond the grass ring the field must read as the same carpet seen from afar
     const far = smoothstep(22, 60, positionWorld.xz.sub(cameraPosition.xz).length()).mul(sA.r.add(sA.g).add(sA.b).add(sB.b).oneMinus().clamp(0, 1));
-    col = mix(col, mix(vec3(0.24, 0.27, 0.07), vec3(0.42, 0.34, 0.11), patch).mul(macro), far.mul(0.85));
+    col = mix(col, mix(vec3(0.27, 0.24, 0.09), vec3(0.4, 0.31, 0.13), patch).mul(macro), far.mul(0.8)); // dry steppe seen from afar
 
     let nrm = tex('grass_steppe', 9, 'normalMap').rgb;
     nrm = mix(nrm, tex('plowed', 4, 'normalMap').rgb, sA.r);

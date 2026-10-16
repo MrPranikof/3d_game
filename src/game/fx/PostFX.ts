@@ -47,7 +47,7 @@ export class PostFX {
 
     // ── colour grade: richer saturation, gentle S-curve, cool shadows / warm highlights ──
     const lum = luminance(c);
-    c = mix(vec3(lum), c, 1.18);
+    c = mix(vec3(lum), c, 1.12);
     c = c.mul(mix(vec3(0.94, 0.98, 1.06), vec3(1.06, 1.01, 0.92), smoothstep(0.05, 0.6, lum)));
     c = max(c, vec3(0));
     c = c.mul(smoothstep(0.0, 0.35, luminance(c)).mul(0.12).add(0.9)); // deepen shadows a touch

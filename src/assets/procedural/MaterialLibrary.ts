@@ -457,14 +457,64 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
 
 export type MaterialKey = keyof typeof MATERIAL_DEFS & string;
 
+// ── CC0 photoscanned textures (Poly Haven via tools/fetch-textures.mjs) override the synthesized
+// ones for the keys listed in public/textures/photo.json; everything else stays procedural. ──
+interface PhotoSet { size: number; map: THREE.Texture; normalMap?: THREE.Texture; roughnessMap?: THREE.Texture }
+const photos = new Map<string, PhotoSet>();
+let photoLoad: Promise<void> | null = null;
+
+function loadTex(url: string, srgb: boolean): Promise<THREE.Texture> {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => {
+      const t = new THREE.Texture(im);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 8;
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.needsUpdate = true;
+      res(t);
+    };
+    im.onerror = () => rej(new Error(`texture ${url}`));
+    im.src = url;
+  });
+}
+
+export function preloadPhotoTextures(): Promise<void> {
+  if (typeof Image === 'undefined') return Promise.resolve();
+  photoLoad ??= (async () => {
+    try {
+      const base = `${import.meta.env.BASE_URL}textures/`;
+      const manifest = (await (await fetch(`${base}photo.json`)).json()) as Record<string, { size: number; maps: string[] }>;
+      await Promise.all(Object.entries(manifest).map(async ([key, m]) => {
+        const [map, nor, rough] = await Promise.all([
+          loadTex(`${base}${key}_diff.jpg`, true),
+          m.maps.includes('nor') ? loadTex(`${base}${key}_nor.jpg`, false) : undefined,
+          m.maps.includes('rough') ? loadTex(`${base}${key}_rough.jpg`, false) : undefined,
+        ]);
+        photos.set(key, { size: m.size, map, normalMap: nor, roughnessMap: rough });
+      }));
+    } catch (e) {
+      console.warn('photo textures unavailable, using procedural', e);
+    }
+  })();
+  return photoLoad;
+}
+
 export class MaterialLibrary {
   private cache = new Map<string, THREE.MeshStandardMaterial>();
   constructor(private readonly quality: QualitySettings) {}
 
   def(key: string): MaterialDef {
-    const d = MATERIAL_DEFS[key.split('__')[0]];
+    const base = key.split('__')[0];
+    const d = MATERIAL_DEFS[base];
     if (!d) throw new Error(`MaterialLibrary: unknown material "${key}"`);
-    return d;
+    const ph = photos.get(base);
+    return ph && !d.authoredUV ? { ...d, tile: ph.size } : d; // UVs follow the photo's real size
+  }
+
+  /** metres per texture repeat of a photo texture, if one replaces this key */
+  photoSize(key: string): number | undefined {
+    return photos.get(key)?.size;
   }
 
   get(key: string): THREE.MeshStandardMaterial {
@@ -475,6 +525,15 @@ export class MaterialLibrary {
       return this.unique(base, suffix);
     }
     const d = this.def(key);
+    const ph = photos.get(key);
+    if (ph && !d.authoredUV) {
+      m = new THREE.MeshStandardMaterial({
+        name: key, map: ph.map, normalMap: ph.normalMap ?? null, roughnessMap: ph.roughnessMap ?? null,
+        roughness: 1, metalness: d.metalness !== undefined && d.metalness > 0.5 ? 0.6 : 0, side: d.side ?? THREE.FrontSide,
+      });
+      this.cache.set(key, m);
+      return m;
+    }
     const size = d.authoredUV || key.startsWith('emissive') || key.startsWith('glass') ? Math.min(this.quality.textureSize, 512) : this.quality.textureSize;
     const tex = synthesize(key, d, size);
     m = new THREE.MeshStandardMaterial({
