@@ -64,6 +64,18 @@ export class Soldier implements Damageable, Attacker {
   private fallT = -1;
   /** motion-captured clip set (Mixamo) is available on this model */
   private mocap = false;
+  private overlays = new Map<string, THREE.AnimationAction>();
+
+  /** one-shot upper-body gesture (reload, recoil flinch, hit reaction) over the current locomotion */
+  private gesture(name: string, duration?: number, weight = 1): void {
+    const a = this.overlays.get(name);
+    if (!a || !this.model?.root.visible) return;
+    if (a.isRunning() && name !== 'Fire') return;
+    a.reset();
+    a.setEffectiveWeight(weight * 4); // mixer blends by relative weight: 4:1 ≈ override of the arms
+    if (duration) a.setDuration(duration);
+    a.fadeIn(0.1).play();
+  }
   private visibleState = true;
   private shadowState = true;
 
@@ -96,6 +108,19 @@ export class Soldier implements Damageable, Attacker {
       this.actions.set(clip.name, a);
     }
     this.mocap = this.actions.has('IdleAim');
+    if (this.mocap) {
+      // upper-body variants of reload / recoil, played on top of the locomotion clip
+      const UPPER = /^(Spine|Chest|Neck|Head|Left|Right)(?!.*(UpLeg|Leg|Foot))/;
+      for (const name of ['Reload', 'Fire', 'Hit']) {
+        const src = inst.animations.find((c) => c.name === name);
+        if (!src) continue;
+        const clip = new THREE.AnimationClip(`${name}_upper`, src.duration, src.tracks.filter((t) => UPPER.test(t.name.split('.')[0])).map((t) => t.clone()));
+        const a = this.mixer.clipAction(clip);
+        a.setLoop(THREE.LoopOnce, 1);
+        a.clampWhenFinished = false;
+        this.overlays.set(name, a);
+      }
+    }
     this.play('Idle');
     this.weaponNode = inst.nodes.get('Weapon');
     this.muzzleNode = this.weaponNode?.getObjectByName('Muzzle');
@@ -204,6 +229,7 @@ export class Soldier implements Damageable, Attacker {
     w.mag--;
     w.cooldown = w.interval;
     this.lastShot = this.ctx.time;
+    if (Math.random() < 0.35) this.gesture('Fire', 0.35, 0.35); // shoulder recoil flinch
     const s = w.spread * spreadMul;
     const d = dir.clone().add(new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s)).normalize();
     const tracer = w.mag % 4 === 0;
@@ -222,6 +248,7 @@ export class Soldier implements Damageable, Attacker {
     const w = this.weapon;
     if (w.reloading > 0 || w.mag >= w.magSize || w.reserve <= 0) return;
     w.reloading = w.reloadTime;
+    this.gesture('Reload', w.reloadTime);
     if (this.isPlayer) this.ctx.audio.ui('reload');
   }
 
@@ -248,6 +275,7 @@ export class Soldier implements Damageable, Attacker {
     if (this.isPlayer) this.ctx.player.onDamaged(d);
     if (d.attacker?.isPlayer && d.attacker !== this) this.ctx.hud.hitMarker(this.hp <= 0, !!d.headshot);
     if (this.hp <= 0) this.die(d);
+    else if (d.amount > 15) this.gesture('Hit', undefined, 0.8);
   }
 
   die(d: DamageInfo | null): void {
