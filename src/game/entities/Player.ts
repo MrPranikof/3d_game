@@ -69,7 +69,7 @@ export class Player {
     });
     this.vmEW = ctx.factory.instantiateTemplate(ctx.template('ew_gun')).root;
     this.vmGrenade = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8).scale(1, 1.25, 1), new THREE.MeshStandardMaterial({ color: 0x4a5236, roughness: 0.6 }));
-    this.vmRifle.add(buildArms(ctx, team, team === 'A' ? -0.33 : -0.36));
+    this.vmRifle.add(buildScanArms(ctx, team) ?? buildArms(ctx, team, team === 'A' ? -0.33 : -0.36));
     for (const o of [this.vmRifle, this.vmEW, this.vmGrenade]) {
       o.traverse((m) => { m.castShadow = false; m.frustumCulled = false; });
       this.viewmodel.add(o);
@@ -424,6 +424,98 @@ export class Player {
  * hands on the pistol grip and the handguard. Built in rifle space from the same material
  * library as the soldier models.
  */
+/**
+ * First-person arms from the scanned soldier itself: the body in its motion-captured aiming pose
+ * (head and legs collapsed), placed so its palms sit on the view-model rifle's grip and handguard —
+ * the same palm-to-palm fit the bots use, inverted.
+ */
+function buildScanArms(ctx: GameContext, team: Team): THREE.Object3D | null {
+  const tpl = ctx.template('soldier', team);
+  const clip = tpl.animations.find((a) => a.name === 'IdleAim');
+  if (!clip) return null;
+  const inst = ctx.factory.instantiateTemplate(tpl);
+  const root = inst.root;
+  inst.nodes.get('Weapon')?.removeFromParent(); // the view model brings its own rifle
+  const mixer = new THREE.AnimationMixer(root);
+  mixer.clipAction(clip).play();
+  mixer.update(0.4);
+  // keep only the arms: triangles whose vertices are all driven mainly by arm bones (the vest and
+  // helmet would otherwise fill the lower half of the screen)
+  // forearms + hands only: the view model sits ~0.45 m ahead of where the mocap body would put it,
+  // so upper arms and shoulders would land in front of the camera
+  const ARM = /^(Left|Right)(ForeArm|Hand)$/;
+  const keepers: THREE.Object3D[] = [];
+  root.traverse((o) => {
+    const sm = o as THREE.SkinnedMesh;
+    if (!sm.isSkinnedMesh) return;
+    if (sm.parent && (sm.parent as THREE.LOD).isLOD && (sm.parent as THREE.LOD).levels[0].object !== sm) return;
+    const g = sm.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    const armBone = sm.skeleton.bones.map((b) => ARM.test(b.name));
+    const dominant = (v: number) => { let w = 0; for (let k = 0; k < 4; k++) if (armBone[si.getComponent(v, k)]) w += sw.getComponent(v, k); return w >= 0.5; };
+    const idx = g.index!.array, keep: number[] = [];
+    const P = g.attributes.position;
+    const edge = (a: number, b: number) => Math.hypot(P.getX(a) - P.getX(b), P.getY(a) - P.getY(b), P.getZ(a) - P.getZ(b));
+    for (let t = 0; t < idx.length; t += 3) {
+      const [a, b, c] = [idx[t], idx[t + 1], idx[t + 2]];
+      if (+dominant(a) + +dominant(b) + +dominant(c) < 2) continue;
+      if (Math.max(edge(a, b), edge(b, c), edge(c, a)) > 0.07) continue; // stretched flaps at the cut
+      keep.push(a, b, c);
+    }
+    if (!keep.length) return;
+    const ng = g.clone();
+    ng.setIndex(keep);
+    const mat = (sm.material as THREE.Material).clone();
+    mat.side = THREE.DoubleSide; // the cut sleeve is open at the shoulder
+    const arms = new THREE.SkinnedMesh(ng, mat);
+    arms.name = 'FP_Arms';
+    arms.bind(sm.skeleton, sm.bindMatrix);
+    keepers.push(arms);
+  });
+  if (!keepers.length) return null;
+  const meshes: THREE.Object3D[] = [];
+  root.traverse((o) => { if ((o as THREE.Mesh).isMesh || (o as THREE.LOD).isLOD) meshes.push(o); });
+  for (const m of meshes) m.removeFromParent();
+  for (const k of keepers) root.add(k);
+  root.updateMatrixWorld(true);
+  const pos = (n: string) => inst.nodes.get(n)!.getWorldPosition(new THREE.Vector3());
+  const palm = (hand: string, fore: string) => { const h = pos(hand); return h.clone().addScaledVector(h.clone().sub(pos(fore)).normalize(), 0.075); };
+  const grip = palm('RightHand', 'RightForeArm'), support = palm('LeftHand', 'LeftForeArm');
+  // rifle frame in body space (barrel −Z from grip toward the support hand, kept upright)
+  const z = grip.clone().sub(support).normalize();
+  const x = new THREE.Vector3(0, 1, 0).cross(z).normalize();
+  const y = z.clone().cross(x);
+  // swing the left forearm down and back under the handguard so its cut elbow leaves the screen
+  const fore = inst.nodes.get('LeftForeArm')!, hand = inst.nodes.get('LeftHand')!;
+  const H = pos('LeftHand'), E0 = pos('LeftForeArm');
+  const swing = new THREE.Vector3().addScaledVector(x, -0.15).addScaledVector(y, -0.55).addScaledVector(z, 0.85).normalize(); // toward the camera's lower edge
+  const E1 = H.clone().addScaledVector(swing, H.distanceTo(E0)); // keep the forearm length so the hand stays put
+  const handQ = hand.getWorldQuaternion(new THREE.Quaternion());
+  const R = new THREE.Quaternion().setFromUnitVectors(H.clone().sub(E0).normalize(), H.clone().sub(E1).normalize());
+  const foreQ = R.multiply(fore.getWorldQuaternion(new THREE.Quaternion()));
+  const parentInv = fore.parent!.matrixWorld.clone().invert();
+  // + nudge toward the rifle: the visible palm sits beside the bone, not on it
+  fore.position.copy(E1.clone().addScaledVector(x, 0.045).addScaledVector(y, 0.015).applyMatrix4(parentInv));
+  fore.quaternion.copy(fore.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(foreQ));
+  fore.updateMatrixWorld(true);
+  hand.quaternion.copy(fore.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(handQ));
+  root.updateMatrixWorld(true);
+  // sleeve continuing past the cut elbow, off the bottom of the screen
+  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.06, 0.5, 14, 1, true), ctx.factory.materials.get(team === 'A' ? 'camo_mm14' : 'camo_emr'));
+  (sleeve.material as THREE.Material).side = THREE.DoubleSide;
+  sleeve.position.copy(E1).addScaledVector(swing, 0.22);
+  sleeve.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), swing);
+  sleeve.name = 'FP_Sleeve';
+  root.add(sleeve);
+  const rifle = new THREE.Matrix4().makeBasis(x, y, z).multiply(new THREE.Matrix4().makeRotationX(-0.09)).setPosition(grip);
+  const holder = new THREE.Group();
+  holder.name = 'Arms';
+  holder.matrixAutoUpdate = false;
+  holder.matrix.copy(rifle.invert()); // body placed in rifle space
+  holder.add(root);
+  root.traverse((o) => { o.castShadow = false; o.frustumCulled = false; });
+  return holder;
+}
+
 function buildArms(ctx: GameContext, team: Team, supportZ: number): THREE.Group {
   const mats = ctx.factory.materials;
   const camo = mats.get(team === 'A' ? 'camo_mm14' : 'camo_emr');
