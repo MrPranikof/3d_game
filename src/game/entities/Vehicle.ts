@@ -485,7 +485,9 @@ export class Vehicle implements Damageable, Attacker {
     const p = this.position;
     const hf = t.heightAt(p.x - sh * L, p.z - ch * L), hb = t.heightAt(p.x + sh * L, p.z + ch * L);
     const hl = t.heightAt(p.x - ch * W, p.z + sh * W), hr = t.heightAt(p.x + ch * W, p.z - sh * W);
-    const targetY = Math.max((hf + hb + hl + hr) / 4, t.heightAt(p.x, p.z) - 0.2);
+    // sit on the four track corners; on a crest the belly may dip a little into the ground (hidden by
+    // grass) instead of the whole tank floating with all four corners in the air
+    const targetY = Math.max((hf + hb + hl + hr) / 4, t.heightAt(p.x, p.z) - 0.5);
     const k = dt ? Math.min(1, dt * 6) : 1;
     p.y += (targetY - p.y) * k;
     this.pitch += (Math.atan2(hf - hb, 2 * L) - this.pitch) * k;

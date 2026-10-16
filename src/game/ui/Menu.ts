@@ -35,7 +35,7 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
       </div>
       <details class="settings" ${touch ? '' : 'open'}>
         <summary>Настройки</summary>
-        <label>Качество <select data-s="quality"><option value="mobile">Мобильное</option><option value="desktop">Высокое</option><option value="ultra">Ультра</option></select></label>
+        <label>Качество <select data-s="quality"><option value="mobile">Низкое (слабый ноутбук, телефон)</option><option value="desktop">Среднее</option><option value="ultra">Ультра (мощная видеокарта)</option></select></label>
         <label>Ботов в команде <input data-s="bots" type="range" min="3" max="12" value="${s.botsPerTeam ?? (touch ? 6 : 9)}"><output></output></label>
         <label>Чувствительность <input data-s="sens" type="range" min="0.3" max="2.5" step="0.05" value="${s.sens ?? 1}"><output></output></label>
         <label><input data-s="invert" type="checkbox" ${s.invertY ? 'checked' : ''}> Инверсия по вертикали</label>

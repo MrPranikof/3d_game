@@ -152,7 +152,7 @@ export class Terrain {
     // large patches of greener / sun-dried steppe so the field doesn't read as one flat colour
     const patch = smoothstep(0.35, 0.75, texture(L('soil').map!, positionWorld.xz.div(311)).g);
     // match the grass carpet's average tone (straw/ochre with olive patches) so the ring edge disappears
-    col = mix(col.mul(vec3(0.95, 0.95, 0.72)), col.mul(vec3(1.22, 1.06, 0.72)), patch);
+    col = mix(col.mul(vec3(0.85, 1.0, 0.62)), col.mul(vec3(1.25, 1.08, 0.62)), patch);
     col = mix(col, tex('stubble', 4).rgb, sB.r);
     col = mix(col, col.mul(vec3(0.9, 1.02, 0.85)), sB.g);
     col = mix(col, tex('plowed', 4).rgb, sA.r);
@@ -163,7 +163,7 @@ export class Terrain {
     col = col.mul(macro);
     // beyond the grass ring the field must read as the same carpet seen from afar
     const far = smoothstep(22, 60, positionWorld.xz.sub(cameraPosition.xz).length()).mul(sA.r.add(sA.g).add(sA.b).add(sB.b).oneMinus().clamp(0, 1));
-    col = mix(col, mix(vec3(0.3, 0.25, 0.11), vec3(0.4, 0.32, 0.14), patch).mul(macro), far.mul(0.85));
+    col = mix(col, mix(vec3(0.24, 0.27, 0.07), vec3(0.42, 0.34, 0.11), patch).mul(macro), far.mul(0.85));
 
     let nrm = tex('grass_steppe', 9, 'normalMap').rgb;
     nrm = mix(nrm, tex('plowed', 4, 'normalMap').rgb, sA.r);

@@ -35,6 +35,7 @@ export class HUD {
         <div class="tickets"><span class="tk tkA"><i></i><b data-k="tA">0</b></span><div class="pts" data-k="pts"></div><span class="tk tkB"><b data-k="tB">0</b><i></i></span></div>
         <div class="compass"><div class="compass-strip" data-k="compass"></div><div class="compass-mark"></div></div>
       </div>
+      <div class="fps" data-k="fps"></div>
       <div class="feed" data-k="feed"></div>
       <div class="msg" data-k="msg"></div>
       <div class="threat" data-k="threat">⚠ FPV-ДРОН ПРОТИВНИКА</div>
@@ -184,8 +185,16 @@ export class HUD {
 
   // ───────────────────────── per frame ─────────────────────────
 
+  private fpsT = 0;
+  /** set by Game: current fps and render resolution scale */
+  stats = { fps: 0, scale: 1 };
+
   update(dt: number): void {
     const ctx = this.ctx;
+    if ((this.fpsT -= dt) <= 0) {
+      this.fpsT = 0.5;
+      this.el.fps.textContent = `${this.stats.fps} FPS · ${Math.round(this.stats.scale * 100)}%`;
+    }
     const pl = ctx.player;
     const s = pl.soldier;
     const cam = ctx.camera;

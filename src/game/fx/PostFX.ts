@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { abs, clamp, float, floor, fract, hash, length, luminance, mix, pass, pow, screenUV, sin, smoothstep, step, time, uniform, vec2, vec3, vec4 } from 'three/tsl';
+import { abs, clamp, max, renderOutput, float, floor, fract, hash, length, luminance, mix, pass, pow, screenUV, sin, smoothstep, step, time, uniform, vec2, vec3, vec4 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
 /**
  * Post-processing graph in TSL (compiles to WGSL on WebGPU and GLSL on WebGL2):
@@ -23,7 +24,7 @@ export class PostFX {
   readonly uSightNoise = uniform(0);
   private staticFlash = 0;
 
-  constructor(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, withBloom: boolean) {
+  constructor(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, withBloom: boolean, withFxaa = false) {
     this.pipeline = new THREE.RenderPipeline(renderer);
     const scenePass = pass(scene, camera);
     const color = scenePass.getTextureNode('output');
@@ -44,10 +45,12 @@ export class PostFX {
     // only genuinely hot pixels (flashes, explosions, tracers) bloom; sunlit walls stay crisp
     if (withBloom) c = c.add(bloom(color, 0.1, 0.25, 2.4).rgb);
 
-    // ── colour grade: slightly desaturated, cool shadows / warm highlights ──
+    // ── colour grade: richer saturation, gentle S-curve, cool shadows / warm highlights ──
     const lum = luminance(c);
-    c = mix(vec3(lum), c, 0.95);
-    c = c.mul(mix(vec3(0.93, 0.98, 1.05), vec3(1.05, 1.0, 0.94), smoothstep(0.05, 0.6, lum)));
+    c = mix(vec3(lum), c, 1.18);
+    c = c.mul(mix(vec3(0.94, 0.98, 1.06), vec3(1.06, 1.01, 0.92), smoothstep(0.05, 0.6, lum)));
+    c = max(c, vec3(0));
+    c = c.mul(smoothstep(0.0, 0.35, luminance(c)).mul(0.12).add(0.9)); // deepen shadows a touch
 
     // ── thermal (white-hot) ──
     const th = pow(clamp(luminance(c).mul(1.4), 0, 1), float(0.85));
@@ -66,14 +69,20 @@ export class PostFX {
     // ── vignettes ──
     const centred = uv0.sub(0.5).mul(vec2(this.uAspect, 1));
     const r = length(centred);
-    c = c.mul(smoothstep(0.95, 0.35, r).mul(0.25).add(0.75)); // lens vignette
+    c = c.mul(smoothstep(1.05, 0.4, r).mul(0.14).add(0.86)); // subtle lens vignette
     const scopeMask = step(r, 0.44);
     c = mix(c, c.mul(scopeMask), this.uScope);
     const edge = smoothstep(0.3, 0.85, r);
     c = mix(c, vec3(0.35, 0.0, 0.0), edge.mul(this.uDamage).mul(0.75));
     c = c.mul(edge.mul(this.uSuppress).mul(-0.45).add(1));
 
-    this.pipeline.outputNode = vec4(c, 1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const out: any = vec4(c, 1);
+    if (withFxaa) {
+      // FXAA must see tone-mapped sRGB, so do the output transform ourselves before it
+      this.pipeline.outputColorTransform = false;
+      this.pipeline.outputNode = fxaa(renderOutput(out));
+    } else this.pipeline.outputNode = out;
   }
 
   setNoise(v: number, lost: boolean): void {

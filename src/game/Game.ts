@@ -47,6 +47,12 @@ export class Game {
   private respawnQueue: { team: Team; id: string; x: number; z: number; rot: number; at: number }[] = [];
   private wrecks: { v: Vehicle; at: number }[] = [];
   private fpsAcc = 0;
+  /** dynamic resolution: fraction of maxPixelRatio, adjusted from measured frame time */
+  private maxPixelRatio = 1;
+  private resScale = 1;
+  private resAcc = 0;
+  private resN = 0;
+  private resGood = 0;
   private fpsN = 0;
   fps = 0;
   backendName = '';
@@ -64,7 +70,8 @@ export class Game {
     const mobile = settings.quality === 'mobile';
     // Mobile WebGPU (e.g. iOS 26 Safari) is still young; the WebGL2 backend is the proven path there.
     const forceWebGL = settings.api === 'webgl' || (settings.api !== 'webgpu' && settings.touch);
-    const renderer = new THREE.WebGPURenderer({ canvas, antialias: !mobile, powerPreference: 'high-performance', forceWebGL });
+    // 4× MSAA only on «Ультра»; «Высокое» uses FXAA in PostFX (much cheaper on integrated GPUs)
+    const renderer = new THREE.WebGPURenderer({ canvas, antialias: settings.quality === 'ultra', powerPreference: 'high-performance', forceWebGL });
     await renderer.init();
     this.backendName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'WebGPU' : 'WebGL2';
     type Dev = { lost: Promise<{ message: string }>; addEventListener?: (t: string, f: (e: { error: { message: string } }) => void) => void };
@@ -73,10 +80,12 @@ export class Game {
       void dev.lost.then((i) => reportError(`WebGPU device lost: ${i.message}. Выберите «WebGL2» в настройках.`));
       dev.addEventListener?.('uncapturederror', (e) => reportError(`WebGPU: ${e.error.message}`));
     }
-    renderer.setPixelRatio(Math.min(devicePixelRatio, mobile ? 1.25 : 2));
+    // HiDPI laptops render 4× the pixels at devicePixelRatio 2; only «Ультра» goes above 1
+    this.maxPixelRatio = Math.min(devicePixelRatio, settings.quality === 'ultra' ? 1.5 : 1);
+    renderer.setPixelRatio(this.maxPixelRatio);
     renderer.setSize(innerWidth, innerHeight, false);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.9;
+    renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -97,7 +106,7 @@ export class Game {
     const input = new Input(canvas);
     const particles = new Particles(mobile ? 600 : 1000);
     particles.group.userData.heat = -1;
-    const postfx = new PostFX(renderer, scene, camera, !mobile);
+    const postfx = new PostFX(renderer, scene, camera, settings.quality === 'ultra', settings.quality === 'desktop');
     const thermal = new Thermal(scene, postfx);
     thermal.onChange = (on) => (particles.hideSmoke = on);
     const templates = new Map<string, AssetTemplate>();
@@ -141,12 +150,13 @@ export class Game {
     veg.group.userData.heat = 0.2;
     for (const id of ['tree_poplar', 'tree_acacia', 'tree_scorched']) veg.registerType(id, ctx.template(id), 260);
     veg.plant();
-    veg.initGrass(factory.materials, mobile ? 3500 : 9000);
+    veg.initGrass(factory.materials, settings.quality);
     scene.add(veg.group, particles.group);
 
     progress(0.86, 'Освещение и небо…');
     await tick();
     this.env = new Environment(scene, renderer, settings.quality);
+    this.env.shadowEvery = settings.quality === 'ultra' ? 1 : 2;
 
     progress(0.9, 'Расстановка сил…');
     ctx.combat = new Combat(ctx);
@@ -189,6 +199,9 @@ export class Game {
     await renderer.compileAsync(scene, camera).catch(() => undefined);
     addEventListener('resize', this.onResize);
     this.onResize();
+    // compile every pipeline up front: otherwise each new material stalls the frame it first appears in
+    progress(0.97, 'Подготовка шейдеров…');
+    try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('shader warm-up skipped', e); }
     progress(1, 'Готово');
   }
 
@@ -265,6 +278,7 @@ export class Game {
     this.last = now;
     this.fpsAcc += dt; this.fpsN++;
     if (this.fpsAcc > 1) { this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0; }
+    this.adaptResolution(dt);
     const ctx = this.ctx;
     const f = ctx.input.poll();
     if (f.pressed.has('pause') && !ctx.conquest.winner) this.setPaused(!this.paused);
@@ -272,26 +286,56 @@ export class Game {
     ctx.postfx.update(dt, innerWidth, innerHeight);
     ctx.postfx.uDamage.value = Math.max(ctx.player.damageFlash, ctx.player.soldier.alive ? Math.max(0, (40 - ctx.player.soldier.hp) / 60) : 0);
     ctx.postfx.uSuppress.value = ctx.player.suppression;
-    ctx.postfx.render();
+    this.timed('render', () => ctx.postfx.render());
   }
+
+  /** CPU ms per subsystem, exponentially smoothed (read via window.__game.perf in ?debug). */
+  readonly perf: Record<string, number> = {};
+  private timed(name: string, fn: () => void): void {
+    const t0 = performance.now();
+    fn();
+    const ms = performance.now() - t0;
+    this.perf[name] = (this.perf[name] ?? ms) * 0.95 + ms * 0.05;
+  }
+
+  /** Lower the render resolution while frames take > 21 ms, creep back up when there is headroom. */
+  private adaptResolution(dt: number): void {
+    if (this.paused) return;
+    this.resAcc += dt; this.resN++;
+    if (this.resAcc < 1.5) return;
+    const ms = (this.resAcc / this.resN) * 1000;
+    this.resAcc = 0; this.resN = 0;
+    let next = this.resScale;
+    if (ms > 21) { next = Math.max(0.5, this.resScale - (ms > 33 ? 0.15 : 0.08)); this.resGood = 0; }
+    else if (ms < 17.8 && ++this.resGood >= 2) { next = Math.min(1, this.resScale + 0.05); this.resGood = 0; }
+    if (Math.abs(next - this.resScale) > 1e-3) {
+      this.resScale = next;
+      this.ctx.renderer.setPixelRatio(this.maxPixelRatio * next);
+      this.onResize();
+    }
+  }
+
+  get renderScale(): number { return this.maxPixelRatio * this.resScale; }
 
   private update(dt: number, f: ReturnType<Input['poll']>): void {
     const ctx = this.ctx;
     ctx.time += dt;
-    ctx.player.update(f, dt);
-    for (const b of this.bots) b.update(dt);
-    for (const v of ctx.vehicles) v.update(dt);
-    ctx.drones.update(dt);
-    ctx.combat.update(dt);
-    ctx.physics.step(dt);
-    ctx.statics.update(dt);
-    ctx.vegetation.update(dt, ctx.camera);
-    ctx.particles.update(dt, ctx.camera);
-    ctx.conquest.update(dt);
+    this.timed('player', () => ctx.player.update(f, dt));
+    this.timed('bots', () => { for (const b of this.bots) b.update(dt); });
+    this.timed('vehicles', () => { for (const v of ctx.vehicles) v.update(dt); });
+    this.timed('drones', () => ctx.drones.update(dt));
+    this.timed('combat', () => ctx.combat.update(dt));
+    this.timed('physics', () => ctx.physics.step(dt));
+    this.timed('statics', () => ctx.statics.update(dt));
+    this.timed('vegetation', () => ctx.vegetation.update(dt, ctx.camera));
+    this.timed('particles', () => ctx.particles.update(dt, ctx.camera));
+    this.timed('conquest', () => ctx.conquest.update(dt));
     this.respawns();
     const focus = ctx.player.drone?.pos ?? ctx.player.vehicle?.position ?? ctx.player.soldier.position;
     this.env.update(focus);
     ctx.audio.setListener(ctx.camera);
+    ctx.hud.stats.fps = this.fps;
+    ctx.hud.stats.scale = this.renderScale;
     ctx.hud.update(dt);
     if (ctx.conquest.winner) {
       ctx.input.releaseLock();

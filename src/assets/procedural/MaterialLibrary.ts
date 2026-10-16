@@ -175,12 +175,12 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
       const grouser = lv > 0.42 && lv < 0.58 ? 1 : 0;
       const pin = (lv < 0.08 || lv > 0.92) ? 1 : 0;
       const guide = Math.abs(u - 0.5) < 0.06 && lv > 0.3 && lv < 0.7 ? 1 : 0;
-      setRGB(t, 0x3b3a37, 0.8 + n.fbm(u, v, 4, 6) * 0.3);
-      t.metal = 0.7; t.rough = 0.55;
+      setRGB(t, 0x2f2c27, 0.75 + n.fbm(u, v, 4, 6) * 0.3);
+      t.metal = 0.35; t.rough = 0.75; // dusty steel, not a mirror for the sky
       t.h = 0.3 + pad * 0.25 + grouser * 0.3 + guide * 0.3 - pin * 0.2;
       const polish = grouser * smoothstep(0.4, 0.7, n.fbm(u, v, 3, 8));
-      mixRGB(t, 0x9a9895, polish * 0.6); t.rough -= polish * 0.25;
-      const mud = smoothstep(0.45, 0.7, n.fbm(u, v * 0.5, 5, 3)) * (1 - grouser * 0.6);
+      mixRGB(t, 0x8a8782, polish * 0.45); t.rough -= polish * 0.15;
+      const mud = smoothstep(0.3, 0.6, n.fbm(u, v * 0.5, 5, 3)) * (1 - grouser * 0.5);
       mixRGB(t, 0x3f3324, mud); t.metal *= 1 - mud; t.rough = lerp(t.rough, 0.95, mud);
     },
   },

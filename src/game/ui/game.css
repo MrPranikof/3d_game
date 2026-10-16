@@ -182,3 +182,6 @@ summary { cursor: pointer; font-weight: 600; letter-spacing: 0.04em; }
   .tank-info { left: 12px; right: auto; text-align: left; top: 8px; }
   .reload { align-self: flex-start; }
 }
+
+/* fps / render-scale readout */
+#hud .fps { position: absolute; top: 8px; right: 10px; font: 600 11px/1 ui-monospace, monospace; color: rgba(233, 235, 224, 0.75); text-shadow: 0 1px 2px #000; pointer-events: none; }
