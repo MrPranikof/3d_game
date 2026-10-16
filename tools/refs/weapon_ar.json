@@ -1,0 +1,3 @@
+{ "id": "ar", "file": "assets-src/refs/m4_side.jpg", "length": 0.84, "muzzle": [19, 228], "butt": 1006, "grip": [696, 300], "thickness": 0.04,
+  "cut": [[512, 70, 708, 189]],
+  "nodes": { "Muzzle": [0, 0.061, -0.576], "Support_Point": [0, 0.036, -0.261], "Sight": [0, 0.098, -0.073], "Magazine": [0, -0.068, -0.124] } }

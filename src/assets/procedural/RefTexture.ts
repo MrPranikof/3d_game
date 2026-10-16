@@ -108,6 +108,39 @@ export function treeCutMaterial(): THREE.MeshStandardMaterial {
   return (cutMat ??= new THREE.MeshStandardMaterial({ name: 'ref_tree_cut', map: treeTex!.cut, color: 0xb8b8b8, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 }));
 }
 
+// ── photo-silhouette rifles (tools/weapon-silhouette.mjs) ──
+export interface WeaponRef {
+  thickness: number;
+  outer: [number, number][];
+  holes: [number, number][][];
+  uv: { u0: number; su: number; v0: number; sv: number };
+  nodes: Record<string, [number, number, number]>;
+  material: THREE.MeshStandardMaterial;
+  edgeMaterial: THREE.MeshStandardMaterial;
+}
+const weapons = new Map<string, WeaponRef>();
+let weaponPreload: Promise<void> | null = null;
+export function preloadWeaponRefs(): Promise<void> {
+  weaponPreload ??= Promise.all(['ak', 'ar'].map(async (id) => {
+    try {
+      const base = `${import.meta.env.BASE_URL}models/ref/weapon_${id}`;
+      const [data, a, n] = await Promise.all([fetch(`${base}.json`).then((r) => r.json()), loadImage(`${base}_albedo.jpg`), loadImage(`${base}_normal.jpg`)]);
+      const map = new THREE.Texture(a), normal = new THREE.Texture(n);
+      map.colorSpace = THREE.SRGBColorSpace;
+      for (const t of [map, normal]) { t.anisotropy = 8; t.needsUpdate = true; }
+      const material = new THREE.MeshStandardMaterial({ name: `ref_weapon_${id}`, map, normalMap: normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.65, metalness: 0.2, envMapIntensity: 0.5 }); // grazing sky reflections read as blue streaks
+      const edgeMaterial = new THREE.MeshStandardMaterial({ name: `ref_weapon_edge_${id}`, color: 0x232425, roughness: 0.85, metalness: 0.1, envMapIntensity: 0.35 });
+      weapons.set(id, { ...data, material, edgeMaterial });
+    } catch (e) {
+      console.warn('weapon ref', id, e);
+    }
+  })).then(() => undefined);
+  return weaponPreload;
+}
+export function weaponRef(id: string): WeaponRef | undefined {
+  return weapons.get(id);
+}
+
 export function hasRefTexture(id: string): boolean {
   return textures.has(id);
 }

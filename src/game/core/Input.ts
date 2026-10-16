@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu';
  */
 
 export type Action =
-  | 'fire' | 'ads' | 'jump' | 'crouch' | 'prone' | 'sprint' | 'reload' | 'interact' | 'leanL' | 'leanR'
+  | 'fire' | 'ads' | 'jump' | 'mouse' | 'crouch' | 'prone' | 'sprint' | 'reload' | 'interact' | 'leanL' | 'leanR'
   | 'weapon1' | 'weapon2' | 'weapon3' | 'drone' | 'smoke' | 'view' | 'lase' | 'ammo' | 'thermal' | 'drop'
   | 'droneMode' | 'exit' | 'zoomIn' | 'zoomOut' | 'pause' | 'scoreboard' | 'throttleUp' | 'throttleDown' | 'optic';
 
@@ -29,7 +29,7 @@ const KEYMAP: Record<string, Action[]> = {
   KeyR: ['reload'], KeyF: ['interact'], KeyQ: ['leanL'], KeyE: ['leanR'],
   Digit1: ['weapon1'], Digit2: ['weapon2'], Digit3: ['weapon3'], KeyG: ['drone'], KeyX: ['smoke'],
   KeyV: ['view'], KeyL: ['lase'], KeyB: ['ammo', 'drop'], KeyT: ['thermal'], KeyM: ['droneMode'],
-  KeyH: ['optic'], Escape: ['pause'], Tab: ['scoreboard'], Backspace: ['exit'],
+  KeyH: ['optic'], AltLeft: ['mouse'], AltRight: ['mouse'], Escape: ['pause'], Tab: ['scoreboard'], Backspace: ['exit'],
 };
 
 export class Input {
@@ -41,6 +41,10 @@ export class Input {
   locked = false;
   /** Pointer Lock refused (e.g. sandboxed iframe) → drag-to-look fallback */
   lockFailed = false;
+  /** Alt-toggled: look follows the bare mouse when pointer lock is unavailable (sandboxed frames) */
+  freeLook = false;
+  /** set while we release the pointer on purpose, so the unlock doesn't open the pause menu */
+  private releasing = false;
   sensitivity = { infantry: 1, tank: 0.7, drone: 1, gyroInfantry: 1, gyroTank: 0.6, gyroDrone: 0.8 };
   invertY = false;
   gyroEnabled = false;
@@ -69,7 +73,7 @@ export class Input {
   constructor(private canvas: HTMLCanvasElement) {
     addEventListener('keydown', (e) => {
       if (this.mode === 'menu') return;
-      if (e.code === 'Tab' || e.code === 'Space' || e.code === 'Backspace') e.preventDefault();
+      if (e.code === 'Tab' || e.code === 'Space' || e.code === 'Backspace' || e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault();
       if (!this.keys.has(e.code)) for (const a of KEYMAP[e.code] ?? []) this.keyPressed.add(a);
       this.keys.add(e.code);
     });
@@ -85,7 +89,7 @@ export class Input {
     addEventListener('mouseup', (e) => this.mouseButtons.delete(e.button));
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
-      if (!this.locked && !(this.lockFailed && this.mouseButtons.size)) return;
+      if (!this.locked && !(this.lockFailed && (this.mouseButtons.size || this.freeLook))) return;
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
     });
@@ -93,7 +97,8 @@ export class Input {
     document.addEventListener('pointerlockerror', () => { this.lockFailed = true; });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === canvas;
-      if (!this.locked && this.mode !== 'menu' && !this.touchActive) this.keyPressed.add('pause');
+      if (!this.locked && this.mode !== 'menu' && !this.touchActive && !this.releasing) this.keyPressed.add('pause');
+      this.releasing = false;
     });
   }
 
@@ -108,6 +113,22 @@ export class Input {
 
   releaseLock(): void {
     if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  /** Alt: hand the cursor back to the OS / take it again (without opening the pause menu). */
+  toggleMouse(): boolean {
+    if (this.lockFailed) {
+      this.freeLook = !this.freeLook;
+      this.canvas.style.cursor = this.freeLook ? 'none' : '';
+      return this.freeLook;
+    }
+    if (this.locked) { this.releasing = true; this.releaseLock(); return false; }
+    this.requestLock();
+    return true;
+  }
+
+  get captured(): boolean {
+    return this.locked || this.freeLook;
   }
 
   /** iOS needs an explicit user gesture to grant motion sensors. */

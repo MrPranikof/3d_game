@@ -512,7 +512,8 @@ function foliageCards(kit: Kit, p: PartBuilder, rng: RNG, center: THREE.Vector3,
     g.applyMatrix4(T(pos.x, pos.y, pos.z, rng.range(0, Math.PI), rng.range(0, Math.PI * 2), rng.range(0, Math.PI)));
     // bend card normals outward from the crown centre → soft, volumetric shading
     const nrm = g.attributes.normal as THREE.BufferAttribute;
-    const out = pos.clone().sub(center).normalize().multiplyScalar(0.8).add(new THREE.Vector3(0, 0.4, 0)).normalize();
+    // mostly-up normals: cards facing away from the sun would otherwise render black
+    const out = pos.clone().sub(center).normalize().multiplyScalar(0.35).add(new THREE.Vector3(0, 1, 0)).normalize();
     for (let k = 0; k < nrm.count; k++) nrm.setXYZ(k, out.x, out.y, out.z);
     p.add(g, 'foliage');
   }

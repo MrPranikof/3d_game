@@ -160,7 +160,9 @@ export class Soldier implements Damageable, Attacker {
     const half = STANCE_HEIGHT[this.stance] / 2;
     kcc!.computeColliderMovement(this.collider, delta, undefined, groups(G.CHAR, G.TERRAIN | G.STATIC | G.VEHICLE | G.TREE | G.DEBRIS));
     const m = kcc!.computedMovement();
-    this.grounded = kcc!.computedGrounded();
+    // Rapier reports "grounded" while the capsule merely touches a wall, which let a held jump climb
+    // walls into the sky. Require real support under the feet: terrain or a walkable surface below.
+    this.grounded = kcc!.computedGrounded() && this.velocity.y <= 0.5 && this.hasFooting(m);
     const t = this.body.translation();
     const next = { x: t.x + m.x, y: t.y + m.y, z: t.z + m.z };
     // map boundary
@@ -175,6 +177,15 @@ export class Soldier implements Damageable, Attacker {
     this.body.setNextKinematicTranslation(next);
     this.position.set(next.x, next.y - half, next.z);
     if (this.grounded && this.velocity.y < -1) this.velocity.y = -1;
+  }
+
+  private hasFooting(m: { x: number; y: number; z: number }): boolean {
+    const t = this.body.translation();
+    const half = STANCE_HEIGHT[this.stance] / 2;
+    const feet = new THREE.Vector3(t.x + m.x, t.y + m.y - half + 0.05, t.z + m.z);
+    if (feet.y - this.ctx.terrain.heightAt(feet.x, feet.z) < 0.2) return true;
+    const hit = this.ctx.physics.raycast(feet, new THREE.Vector3(0, -1, 0), 0.3, { exclude: this.collider, mask: G.TERRAIN | G.STATIC | G.VEHICLE | G.DEBRIS });
+    return !!hit && hit.normal.y > 0.6;
   }
 
   teleport(p: THREE.Vector3): void {

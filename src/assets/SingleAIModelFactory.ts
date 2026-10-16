@@ -11,7 +11,7 @@ import { buildMixamoClips, loadMixamo } from './pipeline/MixamoClips';
 import { generateLODs } from './pipeline/LODBuilder';
 import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
-import { preloadRefTextures, preloadTreeTextures } from './procedural/RefTexture';
+import { preloadRefTextures, preloadTreeTextures, preloadWeaponRefs } from './procedural/RefTexture';
 import { TripoProvider } from './providers/TripoProvider';
 
 /**
@@ -155,7 +155,7 @@ export class SingleAIModelFactory extends EventTarget {
       ensureIndexed(root);
     } else {
       this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
-      await Promise.all([preloadRefTextures(), preloadTreeTextures()]);
+      await Promise.all([preloadRefTextures(), preloadTreeTextures(), preloadWeaponRefs()]);
       const r = this.procedural.build(spec, team);
       root = r.root;
       animations = r.animations;
@@ -232,7 +232,7 @@ export class SingleAIModelFactory extends EventTarget {
       p = (this.queue = this.queue.then(async () => {
         await nextFrame();
         this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
-        await Promise.all([preloadRefTextures(), preloadTreeTextures()]);
+        await Promise.all([preloadRefTextures(), preloadTreeTextures(), preloadWeaponRefs()]);
         const built = this.procedural.build(spec, t);
         const root = built.root;
         let animations = built.animations;

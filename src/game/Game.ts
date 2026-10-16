@@ -106,7 +106,7 @@ export class Game {
     const input = new Input(canvas);
     const particles = new Particles(mobile ? 600 : 1000);
     particles.group.userData.heat = -1;
-    const postfx = new PostFX(renderer, scene, camera, settings.quality === 'ultra', settings.quality === 'desktop');
+    const postfx = new PostFX(renderer, scene, camera, settings.quality === 'ultra', settings.quality !== 'ultra');
     const thermal = new Thermal(scene, postfx);
     thermal.onChange = (on) => (particles.hideSmoke = on);
     const templates = new Map<string, AssetTemplate>();
@@ -282,6 +282,7 @@ export class Game {
     const ctx = this.ctx;
     const f = ctx.input.poll();
     if (f.pressed.has('pause') && !ctx.conquest.winner) this.setPaused(!this.paused);
+    if (f.pressed.has('mouse')) ctx.hud.message(ctx.input.toggleMouse() ? 'Мышь захвачена · Alt — отпустить' : 'Мышь свободна · Alt или клик — вернуть');
     if (!this.paused && !ctx.conquest.winner) this.update(dt, f);
     ctx.postfx.update(dt, innerWidth, innerHeight);
     ctx.postfx.uDamage.value = Math.max(ctx.player.damageFlash, ctx.player.soldier.alive ? Math.max(0, (40 - ctx.player.soldier.hp) / 60) : 0);
@@ -298,7 +299,7 @@ export class Game {
     this.perf[name] = (this.perf[name] ?? ms) * 0.95 + ms * 0.05;
   }
 
-  /** Lower the render resolution while frames take > 21 ms, creep back up when there is headroom. */
+  /** Lower the render resolution while frames take > 28 ms, creep back up when there is headroom. */
   private adaptResolution(dt: number): void {
     if (this.paused) return;
     this.resAcc += dt; this.resN++;
@@ -306,8 +307,9 @@ export class Game {
     const ms = (this.resAcc / this.resN) * 1000;
     this.resAcc = 0; this.resN = 0;
     let next = this.resScale;
-    if (ms > 21) { next = Math.max(0.5, this.resScale - (ms > 33 ? 0.15 : 0.08)); this.resGood = 0; }
-    else if (ms < 17.8 && ++this.resGood >= 2) { next = Math.min(1, this.resScale + 0.05); this.resGood = 0; }
+    // never below 75 %: lower resolution than that turns into visible pixel mush
+    if (ms > 28) { next = Math.max(0.75, this.resScale - 0.08); this.resGood = 0; }
+    else if (ms < 21 && ++this.resGood >= 2) { next = Math.min(1, this.resScale + 0.05); this.resGood = 0; }
     if (Math.abs(next - this.resScale) > 1e-3) {
       this.resScale = next;
       this.ctx.renderer.setPixelRatio(this.maxPixelRatio * next);

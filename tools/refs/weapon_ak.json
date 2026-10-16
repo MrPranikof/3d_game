@@ -1,0 +1,2 @@
+{ "id": "ak", "file": "assets-src/refs/ak74m_side.jpg", "length": 0.943, "muzzle": [21, 218], "butt": 1005, "grip": [717, 264], "thickness": 0.042,
+  "nodes": { "Muzzle": [0, 0.044, -0.667], "Support_Point": [0, 0.023, -0.319], "Sight": [0.0, 0.092, -0.112], "Magazine": [0, -0.034, -0.17] } }

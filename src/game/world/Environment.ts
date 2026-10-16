@@ -34,12 +34,13 @@ export class Environment {
       envScene.add(makeSky(this.sunDir, false, false));
       const pmrem = new THREE.PMREMGenerator(renderer);
       scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-      scene.environmentIntensity = 0.5;
+      scene.environmentIntensity = 0.75;
     } catch (e) {
       console.warn('sky environment unavailable', e);
     }
 
-    scene.add(new THREE.HemisphereLight(0x9cc0ff, 0x6a5634, 0.5));
+    // generous sky fill: shaded slopes and backlit foliage must stay readable, not black
+    scene.add(new THREE.HemisphereLight(0xa8c8ff, 0x7a6a44, 1.0));
     this.sun = new THREE.DirectionalLight(0xfff0d6, 3.4);
     this.sun.castShadow = true;
     const ms = quality === 'mobile' ? 1024 : quality === 'ultra' ? 4096 : 2048;

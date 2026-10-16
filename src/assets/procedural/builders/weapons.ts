@@ -1,12 +1,48 @@
 import * as THREE from 'three';
 import { deg, type Kit, node, PartBuilder, T } from '../Kit';
+import { weaponRef, type WeaponRef } from '../RefTexture';
 
 /**
  * Infantry weapons & crew-served systems. Convention: origin = pistol grip / mount point,
  * barrel along −Z, +Y up. Nodes: Body, Magazine, Sight, Muzzle, Grip_Point, Aim_Point.
  */
 
+/** Body extruded from the traced photo silhouette, photo projected on both flanks. */
+function photoBody(ref: WeaponRef): THREE.Group {
+  const shape = new THREE.Shape(ref.outer.map(([z, y]) => new THREE.Vector2(z, y)));
+  shape.holes = ref.holes.map((h) => new THREE.Path(h.map(([z, y]) => new THREE.Vector2(z, y))));
+  const T0 = ref.thickness;
+  const g = new THREE.ExtrudeGeometry(shape, { depth: T0, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.0015, bevelSegments: 1, curveSegments: 1 });
+  // shape (x = rifle z, y = rifle y, extrusion = rifle x) → rifle space, centred on the bore plane
+  const pos = g.attributes.position, nrm = g.attributes.normal;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const sx = pos.getX(i), sy = pos.getY(i), sz = pos.getZ(i);
+    pos.setXYZ(i, sz - T0 / 2, sy, sx);
+    nrm.setXYZ(i, nrm.getZ(i), nrm.getY(i), nrm.getX(i));
+    uv[i * 2] = ref.uv.u0 + ref.uv.su * sx;
+    uv[i * 2 + 1] = ref.uv.v0 + ref.uv.sv * sy;
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  // ExtrudeGeometry groups: 0 = the two flanks (photo), 1 = top/bottom/edge walls (plain metal;
+  // stretching the photo's outline pixels across them reads as silver streaks from first person)
+  const out = new THREE.Group();
+  out.name = 'Body_photo';
+  g.groups.forEach((grp, gi) => {
+    const part = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv']) {
+      const a = g.attributes[name] as THREE.BufferAttribute;
+      part.setAttribute(name, new THREE.BufferAttribute(a.array.slice(grp.start * a.itemSize, (grp.start + grp.count) * a.itemSize), a.itemSize));
+    }
+    part.computeBoundingSphere();
+    out.add(new THREE.Mesh(part, gi === 0 ? ref.material : ref.edgeMaterial));
+  });
+  return out;
+}
+
 export function buildRifle(kit: Kit, kind: 'ar' | 'ak'): THREE.Group {
+  const ref = weaponRef(kind);
+  if (ref) return buildPhotoRifle(kit, kind, ref);
   const root = node(kind === 'ar' ? 'rifle_ar' : 'rifle_ak', null);
   const body = node('Body', root);
   const magN = node('Magazine', root, 0, -0.035, kind === 'ar' ? -0.075 : -0.11);
@@ -93,6 +129,32 @@ export function buildRifle(kit: Kit, kind: 'ar' | 'ak'): THREE.Group {
   sp.emit(sightN);
   // Muzzle / Aim anchors (empty nodes)
   node('Muzzle', root, 0, kind === 'ar' ? 0.074 : 0.05, kind === 'ar' ? -0.725 : -0.725);
+  node('Aim_Point', root, 0, sightN.position.y + 0.018, 0.12);
+  return root;
+}
+
+function buildPhotoRifle(kit: Kit, kind: 'ar' | 'ak', ref: WeaponRef): THREE.Group {
+  const root = node(kind === 'ar' ? 'rifle_ar' : 'rifle_ak', null);
+  const body = node('Body', root);
+  body.add(photoBody(ref));
+  const N = ref.nodes;
+  node('Magazine', root, ...N.Magazine);
+  const sightN = node('Sight', root, ...N.Sight);
+  node('Grip_Point', root, 0, 0, 0);
+  node('Support_Point', root, ...N.Support_Point);
+  const sp = new PartBuilder(kit);
+  // side-mount / rail base under our collimator (the photo optic of the M4 was cut out)
+  sp.add(kit.box(0.026, 0.012, 0.06, 0.003), 'gunmetal', T(0, -0.012, 0));
+  sp.add(kit.box(0.03, 0.012, 0.05), 'gunmetal', T(0, -0.008, 0));
+  sp.add(kit.cyl(0.019, 0.019, 0.07, kit.radial, true).rotateX(-Math.PI / 2), 'gunmetal', T(0, 0.018, 0));
+  sp.add(kit.torus(0.0185, 0.0025, kit.radial), 'gunmetal', T(0, 0.018, -0.035));
+  sp.add(kit.torus(0.0185, 0.0025, kit.radial), 'gunmetal', T(0, 0.018, 0.035));
+  sp.add(kit.cylZ(0.016, 0.004, kit.radial), 'glass_optic', T(0, 0.018, -0.034));
+  sp.add(kit.cylZ(0.016, 0.004, kit.radial), 'glass_optic', T(0, 0.018, 0.034));
+  sp.add(kit.box(0.012, 0.012, 0.015), 'gunmetal', T(0.02, 0.018, 0));
+  sp.add(kit.sphere(0.0018, 6), 'emissive_red', T(0, 0.018, -0.02));
+  sp.emit(sightN);
+  node('Muzzle', root, ...N.Muzzle);
   node('Aim_Point', root, 0, sightN.position.y + 0.018, 0.12);
   return root;
 }

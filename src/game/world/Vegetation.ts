@@ -63,7 +63,7 @@ export class Vegetation {
       m.count = 0;
       m.castShadow = shadow;
       // photo billboards self-shadow into black sheets when seen edge-on
-      m.receiveShadow = (l.material as THREE.Material).name !== 'ref_tree_cut';
+      m.receiveShadow = !/foliage|ref_tree_cut/.test((l.material as THREE.Material).name); // leaves self-shadow into black blobs
       m.frustumCulled = false;
       this.group.add(m);
       return m;
