@@ -205,6 +205,7 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
     },
   },
   anodized_red: { tile: 0.1, recipe: (u, v, t, { n }) => { setRGB(t, 0x8a1d18, 0.85 + n.fbm(u, v, 3, 8) * 0.2); t.metal = 0.9; t.rough = 0.35; } },
+  anodized_blue: { tile: 0.1, recipe: (u, v, t, { n }) => { setRGB(t, 0x1f4fb0, 0.85 + n.fbm(u, v, 3, 8) * 0.2); t.metal = 0.1; t.rough = 0.6; } }, // electrical tape straps
   copper_coil: { tile: 0.05, recipe: (u, v, t, { n }) => { setRGB(t, 0xb06a32, 0.8 + 0.2 * Math.sin(v * 300)); t.metal = 1; t.rough = 0.3 + n.fbm(u, v, 2, 4) * 0.2; t.h = 0.5 + 0.3 * Math.sin(v * 300); } },
   battery_wrap: {
     tile: 0.15,

@@ -21,10 +21,11 @@ const PICK = {
   bark: ['bark_brown_02', 1],
   brick_raw: ['brick_wall_02', 2],
   slate_roof: ['grey_roof_tiles_02', 1.5],
-  plaster_brick: ['white_plaster_rough_02', 2],
+  plaster_brick: ['white_rough_plaster', 2],
   rust: ['rusty_metal_02', 1],
   corrugated_rust: ['rusty_corrugated_iron', 2],
   logs: ['bark_willow', 1],
+  soil: ['brown_mud_dry', 1.3],
 };
 const RAW = 'assets-src/tex';
 const OUT = 'public/textures';

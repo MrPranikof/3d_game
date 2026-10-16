@@ -22,6 +22,7 @@ Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 }); su
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: 0x6b6450 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; sc.add(ground);
 root.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
 sc.add(root);
+{ const b0 = new THREE.Box3().setFromObject(root); if (b0.min.y < 0) root.position.y -= b0.min.y; } // stand on the ground plane
 const box = new THREE.Box3().setFromObject(root), c = box.getCenter(new THREE.Vector3()), R = box.getSize(new THREE.Vector3()).length() / 2;
 const views = (q.get('v') || '35,20;90,0;0,90;160,25').split(';').map((s) => s.split(',').map(Number));
 const cols = views.length > 2 ? 2 : views.length, rows = Math.ceil(views.length / cols);
@@ -35,5 +36,6 @@ views.forEach(([az, el], i) => {
   const x = (i % cols) * W, y = 900 - (Math.floor(i / cols) + 1) * H;
   r.setViewport(x, y, W, H); r.setScissor(x, y, W, H); r.render(sc, cam);
 });
+window.__root = root;
 window.done = true;
 </script></body></html>

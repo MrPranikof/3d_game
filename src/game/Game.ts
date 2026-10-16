@@ -195,12 +195,11 @@ export class Game {
     ctx.hud.setMode('infantry');
     ctx.hud.message('Захватите и удерживайте точки A, B, C', 'good');
 
-    progress(0.96, 'Компиляция шейдеров…');
-    await renderer.compileAsync(scene, camera).catch(() => undefined);
     addEventListener('resize', this.onResize);
     this.onResize();
     // compile every pipeline up front: otherwise each new material stalls the frame it first appears in
     progress(0.97, 'Подготовка шейдеров…');
+    ctx.vegetation.update(0, camera); // populate the grass rings so their pipeline is compiled too
     try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('shader warm-up skipped', e); }
     progress(1, 'Готово');
   }

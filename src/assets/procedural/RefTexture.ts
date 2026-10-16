@@ -192,15 +192,25 @@ export function applyRefProjection(root: THREE.Object3D, id: string): void {
     }
     const cached = wn ? done.get(mesh.geometry) : undefined;
     if (cached) { mesh.geometry = cached; mesh.material = mat; continue; }
-    const g = project(mesh.geometry, toVehicle, atlas);
+    const { g, interior } = project(mesh.geometry, toVehicle, atlas);
     if (wn) done.set(mesh.geometry, g);
+    if (interior) {
+      const inside = new THREE.Mesh(interior, mesh.material);
+      inside.name = `${mesh.name}_inside`;
+      inside.position.copy(mesh.position); inside.quaternion.copy(mesh.quaternion); inside.scale.copy(mesh.scale);
+      inside.castShadow = mesh.castShadow; inside.receiveShadow = mesh.receiveShadow;
+      mesh.parent?.add(inside);
+    }
     mesh.geometry = g;
     mesh.material = mat;
   }
 }
 
-function project(src: THREE.BufferGeometry, m: THREE.Matrix4, a: RefAtlas): THREE.BufferGeometry {
+/** Returns the projected geometry and, for buildings, the interior-side triangles with their
+ *  original UVs (they keep the procedural/photo material instead of the atlas patch). */
+function project(src: THREE.BufferGeometry, m: THREE.Matrix4, a: RefAtlas): { g: THREE.BufferGeometry; interior: THREE.BufferGeometry | null } {
   const g = src.index ? src.toNonIndexed() : src.clone();
+  const inner: number[] = [];
   const pos = g.attributes.position;
   const uv = new Float32Array(pos.count * 2);
   const nm = new THREE.Matrix3().getNormalMatrix(m);
@@ -226,7 +236,7 @@ function project(src: THREE.BufferGeometry, m: THREE.Matrix4, a: RefAtlas): THRE
     }
     if (best && a.inward) {
       // horizontal normal pointing back towards the footprint centre → interior side of a wall
-      if (n.x * c.x + n.z * c.z < -0.05 && Math.abs(n.y) < 0.6) best = null;
+      if (n.x * c.x + n.z * c.z < -0.05 && Math.abs(n.y) < 0.6) { inner.push(t); continue; }
     }
     for (let k = 0; k < 3; k++) {
       let u: number, v: number;
@@ -236,8 +246,23 @@ function project(src: THREE.BufferGeometry, m: THREE.Matrix4, a: RefAtlas): THRE
       uv[(t + k) * 2 + 1] = 1 - v / a.h;
     }
   }
+  const srcUV = g.attributes.uv as THREE.BufferAttribute | undefined;
+  let interior: THREE.BufferGeometry | null = null;
+  if (inner.length && srcUV) {
+    const take = (attr: THREE.BufferAttribute) => {
+      const out = new Float32Array(inner.length * 3 * attr.itemSize);
+      inner.forEach((t, i) => out.set((attr.array as Float32Array).subarray(t * attr.itemSize, (t + 3) * attr.itemSize), i * 3 * attr.itemSize));
+      return new THREE.BufferAttribute(out, attr.itemSize);
+    };
+    interior = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv']) if (g.attributes[name]) interior.setAttribute(name, take(g.attributes[name] as THREE.BufferAttribute));
+    interior = mergeVertices(interior, 1e-5);
+    // drop those triangles from the projected geometry (degenerate them)
+    const P = g.attributes.position as THREE.BufferAttribute;
+    for (const t of inner) for (let k = 1; k < 3; k++) P.setXYZ(t + k, P.getX(t), P.getY(t), P.getZ(t));
+  }
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
   if (!g.attributes.normal) g.computeVertexNormals();
-  return mergeVertices(g, 1e-5);
+  return { g: mergeVertices(g, 1e-5), interior };
 }

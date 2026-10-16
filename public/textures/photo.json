@@ -99,7 +99,7 @@
   ]
  },
  "plaster_brick": {
-  "id": "white_plaster_rough_02",
+  "id": "white_rough_plaster",
   "size": 2,
   "maps": [
    "diff",
@@ -128,6 +128,15 @@
  "logs": {
   "id": "bark_willow",
   "size": 1,
+  "maps": [
+   "diff",
+   "nor",
+   "rough"
+  ]
+ },
+ "soil": {
+  "id": "brown_mud_dry",
+  "size": 1.3,
   "maps": [
    "diff",
    "nor",

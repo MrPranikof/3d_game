@@ -41,15 +41,17 @@ export function buildFPV(kit: Kit): THREE.Group {
     const mx = sx * arm * Math.SQRT1_2, mz = sz * arm * Math.SQRT1_2;
     p.add(kit.cyl(0.016, 0.017, 0.006, 14), 'gunmetal', T(mx, 0.006, mz));
     p.add(kit.cyl(0.0145, 0.0145, 0.012, 14), 'copper_coil', T(mx, 0.015, mz));
-    p.add(kit.cyl(0.0155, 0.0155, 0.014, 14, true), 'anodized_red', T(mx, 0.022, mz));
+    p.add(kit.cyl(0.0155, 0.0155, 0.014, 14, true), 'gunmetal', T(mx, 0.022, mz));
+    // landing leg under each arm (cf. assets-src/refs/fpv_34.webp)
+    p.add(kit.box(0.008, 0.075, 0.012, 0.002), 'polymer_black', T(mx * 0.62, -0.035, mz * 0.62, sz * deg(14), 0, -sx * deg(14)));
     p.add(kit.cyl(0.002, 0.002, 0.012, 6), 'steel_bare', T(mx, 0.034, mz));
   }
   // standoffs, stack (FC/ESC), VTX
-  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) p.add(kit.cyl(0.0035, 0.0035, 0.03, 6), 'anodized_red', T(sx * 0.03, 0.016, sz * 0.055));
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) p.add(kit.cyl(0.0035, 0.0035, 0.03, 6), 'gunmetal', T(sx * 0.03, 0.016, sz * 0.055));
   p.add(kit.box(0.036, 0.012, 0.036, 0.002), 'polymer_black', T(0, 0.012, 0));
   p.add(kit.box(0.03, 0.006, 0.03, 0.002), 'emissive_screen', T(0, 0.02, 0.0));
   // battery 6S strapped on top
-  p.add(kit.box(0.045, 0.04, 0.11, 0.006), 'battery_wrap', T(0, 0.056, 0.005));
+  p.add(kit.box(0.045, 0.04, 0.11, 0.006), 'plastic_grey', T(0, 0.056, 0.005));
   p.add(kit.box(0.05, 0.003, 0.02), 'rubber_black', T(0, 0.077, -0.025));
   p.add(kit.box(0.05, 0.003, 0.02), 'rubber_black', T(0, 0.077, 0.035));
   // rear antenna (immortal-T / dipole) + RX whips
@@ -64,7 +66,7 @@ export function buildFPV(kit: Kit): THREE.Group {
   for (const [name, sx, sz, cw] of motors) {
     const pn = node(`Prop_${name}`, frame, sx * arm * Math.SQRT1_2, 0.042, sz * arm * Math.SQRT1_2);
     const pp = new PartBuilder(kit);
-    for (const g of propeller(kit, 0.178, 3, cw)) pp.add(g, name === 'FL' || name === 'FR' ? 'polymer_tan' : 'polymer_black');
+    for (const g of propeller(kit, 0.178, 3, cw)) pp.add(g, 'polymer_black');
     pp.emit(pn);
   }
 
@@ -77,13 +79,16 @@ export function buildFPV(kit: Kit): THREE.Group {
   gp.emit(gimbal);
   node('Cam_FPV', gimbal, 0, 0, -0.022);
 
-  // payload: shaped-charge warhead with fuze and printed tail fins (RPG-style)
-  const payload = node('Payload', frame, 0, -0.06, 0.0);
+  // payload: PG-7V grenade strapped lengthwise under the frame (cf. fpv_top / fpv_34 refs):
+  // ogive warhead forward, sustainer tube aft, two blue straps
+  const payload = node('Payload', frame, 0.0, -0.05, -0.05);
   const pl = new PartBuilder(kit);
-  pl.add(kit.lathe([[0.0, -0.16], [0.012, -0.155], [0.02, -0.12], [0.042, -0.06], [0.045, 0.0], [0.045, 0.02], [0.02, 0.04], [0.016, 0.12], [0.0, 0.12]], 16).rotateX(Math.PI / 2), 'warhead_olive');
-  pl.add(kit.cylZ(0.006, 0.03, 8), 'steel_bare', T(0, 0, -0.175));
-  for (let i = 0; i < 4; i++) pl.add(kit.box(0.002, 0.04, 0.05), 'polymer_black', T(0, 0, 0.1, 0, 0, (i / 4) * Math.PI));
-  pl.add(kit.box(0.02, 0.008, 0.02), 'polymer_black', T(0, 0.048, 0.0));
+  pl.add(kit.lathe([[0.0, -0.36], [0.008, -0.355], [0.012, -0.33], [0.02, -0.3], [0.037, -0.2], [0.042, -0.12], [0.042, -0.07], [0.022, -0.04], [0.0, -0.04]], 18).rotateX(Math.PI / 2), 'warhead_olive');
+  pl.add(kit.cylZ(0.004, 0.03, 8), 'steel_bare', T(0, 0, -0.37)); // piezo fuze tip
+  pl.add(kit.cylZ(0.021, 0.42, 14), 'warhead_olive', T(0, 0, 0.17)); // sustainer motor tube
+  pl.add(kit.cylZ(0.024, 0.04, 14), 'gunmetal', T(0, 0, 0.39)); // nozzle block
+  pl.add(kit.cylZ(0.017, 0.012, 14, 0.012), 'polymer_black', T(0, 0, 0.415));
+  for (const z of [-0.02, 0.1]) pl.add(kit.cylZ(0.0235, 0.022, 14), 'anodized_blue', T(0, 0, z)); // straps
   pl.emit(payload);
   return root;
 }
