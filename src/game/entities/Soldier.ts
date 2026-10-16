@@ -62,6 +62,8 @@ export class Soldier implements Damageable, Attacker {
   private weaponNode?: THREE.Object3D;
   private muzzleNode?: THREE.Object3D;
   private fallT = -1;
+  /** motion-captured clip set (Mixamo) is available on this model */
+  private mocap = false;
   private visibleState = true;
   private shadowState = true;
 
@@ -88,7 +90,12 @@ export class Soldier implements Damageable, Attacker {
     this.model = inst;
     this.ctx.scene.add(inst.root);
     this.mixer = new THREE.AnimationMixer(inst.root);
-    for (const clip of inst.animations) this.actions.set(clip.name, this.mixer.clipAction(clip));
+    for (const clip of inst.animations) {
+      const a = this.mixer.clipAction(clip);
+      if (clip.userData?.loop === false) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+      this.actions.set(clip.name, a);
+    }
+    this.mocap = this.actions.has('IdleAim');
     this.play('Idle');
     this.weaponNode = inst.nodes.get('Weapon');
     this.muzzleNode = this.weaponNode?.getObjectByName('Muzzle');
@@ -246,6 +253,17 @@ export class Soldier implements Damageable, Attacker {
     // disable collisions, start fall animation
     this.collider.setCollisionGroups(groups(G.DEBRIS, 0));
     this.fallT = 0;
+    if (this.mocap && this.model) {
+      // fall the way the hit pushes: shot from behind → forward, headshot / crouched variants
+      const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+      const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+      const dir = d?.dir ?? new THREE.Vector3();
+      const clip = this.stance === 'crouch' ? 'DeathCrouch' : d?.headshot ? 'DeathHead'
+        : dir.dot(fwd) > 0.5 ? 'DeathBack' : Math.abs(dir.dot(right)) > 0.6 ? 'DeathRight' : 'DeathFront';
+      this.play(clip, 0.12);
+      this.fallT = -1;
+      return;
+    }
     this.mixer?.stopAllAction();
     this.current = undefined;
   }
@@ -289,6 +307,10 @@ export class Soldier implements Damageable, Attacker {
     if (shadow !== this.shadowState) { this.shadowState = shadow; root.traverse((o) => (o.castShadow = shadow)); }
     root.position.copy(this.position);
     if (!this.alive) {
+      if (this.mocap) {
+        root.rotation.set(0, this.yaw, 0);
+        this.mixer!.update(dt);
+      }
       if (this.fallT >= 0 && this.fallT < 1) {
         this.fallT = Math.min(1, this.fallT + dt * 2.2);
         const e = this.fallT * this.fallT;
@@ -303,18 +325,83 @@ export class Soldier implements Damageable, Attacker {
     // animation LOD: far soldiers animate at reduced rate
     const rate = dist > 120 ? 0.25 : dist > 50 ? 0.5 : 1;
     this.animAcc = (this.animAcc ?? 0) + dt;
-    if (this.stance !== 'stand') this.play('Crouch');
-    else if (sp > 4.5) this.play('Run');
-    else if (sp > 0.6) this.play('Walk');
-    else this.play('Idle');
-    if (this.current) this.current.timeScale = this.current.getClip().name === 'Walk' ? Math.max(0.6, sp / 3.6) : 1;
+    if (this.mocap) this.chooseMocap(sp, aiming);
+    else {
+      if (this.stance !== 'stand') this.play('Crouch');
+      else if (sp > 4.5) this.play('Run');
+      else if (sp > 0.6) this.play('Walk');
+      else this.play('Idle');
+      if (this.current) this.current.timeScale = this.current.getClip().name === 'Walk' ? Math.max(0.6, sp / 3.6) : 1;
+    }
+    let updated = false;
     if (this.animAcc >= (1 / 60) / rate) {
       this.mixer!.update(this.animAcc);
       this.animAcc = 0;
+      updated = true;
     }
     if (this.stance === 'prone') root.rotation.set(-Math.PI / 2 + 0.15, this.yaw, 0, 'YXZ');
+    if (this.mocap) {
+      // mocap holds the rifle itself: bend the spine to the aim pitch, then fit the rifle between the hands
+      if (updated && dist < 140) { this.aimSpine(aiming ? this.pitch : 0); this.alignWeapon(); }
+      return;
+    }
     // weapon pose: rifle placed in world space along the aim line (or low-ready), arms solved by IK
     if (this.weaponNode && dist < 140 && this.stance !== 'prone') this.poseWeapon(aiming);
+  }
+
+  /** 8-way locomotion from the velocity in the soldier's own frame. */
+  private chooseMocap(sp: number, aiming: boolean): void {
+    const fwd = -(this.velocity.x * Math.sin(this.yaw) + this.velocity.z * Math.cos(this.yaw));
+    const side = this.velocity.x * Math.cos(this.yaw) - this.velocity.z * Math.sin(this.yaw);
+    const dirOf = (f: string, b: string, l: string, r: string) => (Math.abs(fwd) >= Math.abs(side) ? (fwd >= 0 ? f : b) : side >= 0 ? r : l);
+    let name: string, nominal: number;
+    if (this.stance !== 'stand') {
+      if (sp < 0.4) { name = aiming ? 'CrouchAim' : 'CrouchIdle'; nominal = 0; }
+      else { name = dirOf('CrouchWalk', 'CrouchBack', 'CrouchLeft', 'CrouchRight'); nominal = 1.4; }
+    } else if (sp < 0.5) { name = aiming ? 'IdleAim' : 'Idle'; nominal = 0; }
+    else if (sp > 5.0 && fwd > Math.abs(side)) { name = 'Sprint'; nominal = 6.0; }
+    else if (sp > 2.6) { name = dirOf('Run', 'RunBack', 'RunLeft', 'RunRight'); nominal = 4.2; }
+    else { name = dirOf('Walk', 'WalkBack', 'WalkLeft', 'WalkRight'); nominal = 1.7; }
+    this.play(name, 0.2);
+    if (this.current) this.current.timeScale = nominal ? THREE.MathUtils.clamp(sp / nominal, 0.65, 1.5) : 1;
+  }
+
+  private aimSpine(pitch: number): void {
+    const n = this.model!.nodes;
+    const axis = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); // character right
+    for (const [name, k] of [['Spine', 0.45], ['Chest', 0.55]] as const) {
+      const b = n.get(name);
+      if (!b) continue;
+      b.updateWorldMatrix(true, false);
+      const world = b.getWorldQuaternion(new THREE.Quaternion());
+      world.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, pitch * k));
+      const parentQ = b.parent!.getWorldQuaternion(new THREE.Quaternion()).invert();
+      b.quaternion.copy(parentQ.multiply(world));
+    }
+  }
+
+  /** Rifle grip in the right palm, handguard toward the left palm, kept upright. */
+  private alignWeapon(): void {
+    const w = this.weaponNode;
+    const n = this.model!.nodes;
+    const rh = n.get('RightHand'), lh = n.get('LeftHand'), rf = n.get('RightForeArm'), lf = n.get('LeftForeArm');
+    if (!w || !rh || !lh || !rf || !lf) return;
+    this.model!.root.updateMatrixWorld(true);
+    const palm = (hand: THREE.Object3D, fore: THREE.Object3D) => {
+      const h = hand.getWorldPosition(new THREE.Vector3());
+      return h.clone().addScaledVector(h.clone().sub(fore.getWorldPosition(new THREE.Vector3())).normalize(), 0.075);
+    };
+    const grip = palm(rh, rf), support = palm(lh, lf);
+    const f = support.clone().sub(grip).normalize();
+    const z = f.clone().negate();
+    const x = new THREE.Vector3(0, 1, 0).cross(z).normalize();
+    const y = z.clone().cross(x);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    // support point sits 3 cm above the barrel line in rifle space → tilt the muzzle down to match
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.09));
+    const parent = w.parent!;
+    const local = parent.matrixWorld.clone().invert().multiply(new THREE.Matrix4().compose(grip, q, new THREE.Vector3(1, 1, 1)));
+    local.decompose(w.position, w.quaternion, w.scale);
   }
 
   private poseWeapon(aiming: boolean): void {

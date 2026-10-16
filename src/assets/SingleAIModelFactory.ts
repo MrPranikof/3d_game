@@ -7,6 +7,7 @@ import { GLBCache } from './pipeline/GLBCache';
 import { exportGLB, optimizeGLB, TextureEncodeCache } from './pipeline/GLBPipeline';
 import { flattenForGame } from './pipeline/Flatten';
 import { applyScannedBody, scannedBodyUrl } from './pipeline/ScannedBodies';
+import { buildMixamoClips, loadMixamo } from './pipeline/MixamoClips';
 import { generateLODs } from './pipeline/LODBuilder';
 import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
@@ -232,13 +233,20 @@ export class SingleAIModelFactory extends EventTarget {
         await nextFrame();
         this.procedural ??= new ProceduralEngine(QUALITY[this.quality]);
         await Promise.all([preloadRefTextures(), preloadTreeTextures()]);
-        const { root, animations } = this.procedural.build(spec, t);
+        const built = this.procedural.build(spec, t);
+        const root = built.root;
+        let animations = built.animations;
         const report = validateAsset(root, spec);
         if (report.missingNodes.length) throw new Error(`${spec.id}: missing required nodes ${report.missingNodes.join(', ')}`);
         const scanUrl = scannedBodyUrl(spec.id, t);
         if (scanUrl) {
           try { await applyScannedBody(root, scanUrl); }
           catch (e) { console.warn(`${spec.id}: scanned body unavailable, keeping procedural`, e); }
+        }
+        if (spec.category === 'infantry') {
+          // motion-captured clips fitted to the final bone layout (procedural clips stay as fallback)
+          const mocap = await loadMixamo();
+          if (mocap) animations = buildMixamoClips(root, mocap);
         }
         const keepNames = new Set([...spec.requiredNodes, 'Interior_Gunner', 'Cage', 'Weapon', 'Door_RL', 'Door_RR']);
         const mats = this.procedural.materials;
