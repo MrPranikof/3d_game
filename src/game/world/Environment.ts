@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { safeMode } from '../core/Crash';
 import { clamp, dot, float, max, mix, mx_fractal_noise_float, normalize, positionLocal, pow, smoothstep, time, uniform, vec2, vec3 } from 'three/tsl';
 
 // linear-light palette of a clear late-summer afternoon (cf. the references: deep blue zenith, pale horizon)
@@ -22,7 +23,7 @@ export class Environment {
     const phi = THREE.MathUtils.degToRad(90 - elevation), theta = THREE.MathUtils.degToRad(azimuth);
     this.sunDir.setFromSphericalCoords(1, phi, theta);
 
-    this.sky = makeSky(this.sunDir, quality !== 'mobile', true);
+    this.sky = makeSky(this.sunDir, quality !== 'mobile' && !safeMode.on, true);
     this.sky.userData.heat = 0.02;
     scene.add(this.sky);
 
@@ -42,7 +43,7 @@ export class Environment {
     // generous sky fill: shaded slopes and backlit foliage must stay readable, not black
     scene.add(new THREE.HemisphereLight(0xc6d6ee, 0x7a6a44, 0.85)); // near-neutral: a saturated blue fill tints white plaster
     this.sun = new THREE.DirectionalLight(0xfff0d6, 3.4);
-    this.sun.castShadow = true;
+    this.sun.castShadow = !safeMode.on;
     const ms = quality === 'mobile' ? 1024 : quality === 'ultra' ? 4096 : 2048;
     this.sun.shadow.mapSize.set(ms, ms);
     this.shadowSize = quality === 'mobile' ? 45 : 70;

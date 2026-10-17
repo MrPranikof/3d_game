@@ -1,3 +1,4 @@
+import { crumb, safeMode } from './core/Crash';
 import * as THREE from 'three/webgpu';
 import type { AssetTemplate } from '../assets/pipeline/ModelLoader';
 import { SingleAIModelFactory } from '../assets/SingleAIModelFactory';
@@ -65,7 +66,9 @@ export class Game {
     return g;
   }
 
-  private async init(settings: GameSettings, canvas: HTMLCanvasElement, ui: HTMLElement, progress: (p: number, text: string) => void): Promise<void> {
+  private async init(settings: GameSettings, canvas: HTMLCanvasElement, ui: HTMLElement, report: (p: number, text: string) => void): Promise<void> {
+    const progress = (p: number, text: string) => { crumb(`загрузка: ${text}`); report(p, text); };
+    safeMode.on = !!settings.safe;
     progress(0.02, 'Инициализация WebGPU…');
     const mobile = settings.quality === 'mobile';
     // Mobile WebGPU (e.g. iOS 26 Safari) is still young; the WebGL2 backend is the proven path there.
@@ -81,12 +84,12 @@ export class Game {
       dev.addEventListener?.('uncapturederror', (e) => reportError(`WebGPU: ${e.error.message}`));
     }
     // HiDPI laptops render 4× the pixels at devicePixelRatio 2; only «Ультра» goes above 1
-    this.maxPixelRatio = Math.min(devicePixelRatio, settings.quality === 'ultra' ? 1.5 : 1);
+    this.maxPixelRatio = settings.safe ? 0.75 : Math.min(devicePixelRatio, settings.quality === 'ultra' ? 1.5 : 1);
     renderer.setPixelRatio(this.maxPixelRatio);
     renderer.setSize(innerWidth, innerHeight, false);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !settings.safe;
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const scene = new THREE.Scene();
@@ -150,7 +153,7 @@ export class Game {
     veg.group.userData.heat = 0.2;
     for (const id of ['tree_poplar', 'tree_acacia', 'tree_scorched']) veg.registerType(id, ctx.template(id), 260);
     veg.plant();
-    veg.initGrass(factory.materials, settings.quality);
+    if (!settings.safe) veg.initGrass(factory.materials, settings.quality);
     scene.add(veg.group, particles.group);
 
     progress(0.86, 'Освещение и небо…');
@@ -199,8 +202,10 @@ export class Game {
     this.onResize();
     // compile every pipeline up front: otherwise each new material stalls the frame it first appears in
     progress(0.97, 'Подготовка шейдеров…');
-    ctx.vegetation.update(0, camera); // populate the grass rings so their pipeline is compiled too
-    try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('shader warm-up skipped', e); }
+    if (!settings.safe) {
+      ctx.vegetation.update(0, camera); // populate the grass rings so their pipeline is compiled too
+      try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('shader warm-up skipped', e); }
+    }
     progress(1, 'Готово');
   }
 
@@ -267,8 +272,11 @@ export class Game {
     this.ctx.audio.unlock();
     this.ctx.input.requestLock();
     this.last = performance.now();
+    crumb('старт: звук и захват ввода');
     this.ctx.renderer.setAnimationLoop(() => this.frame());
   }
+
+  private frameNo = 0;
 
   private frame(): void {
     if (!this.running) return;
@@ -277,7 +285,7 @@ export class Game {
     this.last = now;
     this.fpsAcc += dt; this.fpsN++;
     if (this.fpsAcc > 1) { this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0; }
-    this.adaptResolution(dt);
+    if (!this.ctx.settings.safe) this.adaptResolution(dt);
     const ctx = this.ctx;
     const f = ctx.input.poll();
     if (f.pressed.has('pause') && !ctx.conquest.winner) this.setPaused(!this.paused);
@@ -286,7 +294,10 @@ export class Game {
     ctx.postfx.update(dt, innerWidth, innerHeight);
     ctx.postfx.uDamage.value = Math.max(ctx.player.damageFlash, ctx.player.soldier.alive ? Math.max(0, (40 - ctx.player.soldier.hp) / 60) : 0);
     ctx.postfx.uSuppress.value = ctx.player.suppression;
-    this.timed('render', () => ctx.postfx.render());
+    const n = ++this.frameNo;
+    if (n <= 3 || n === 30 || n === 300 || n % 1800 === 0) crumb(`кадр ${n}${n <= 3 ? ' (отрисовка)' : ''}`);
+    // safe mode draws straight to the canvas: no post-processing render targets / FXAA / bloom
+    this.timed('render', () => (ctx.settings.safe ? ctx.renderer.render(ctx.scene, ctx.camera) : ctx.postfx.render()));
   }
 
   /** CPU ms per subsystem, exponentially smoothed (read via window.__game.perf in ?debug). */

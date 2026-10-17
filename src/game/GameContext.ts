@@ -29,6 +29,8 @@ export interface GameSettings {
   touchLayout: 'two' | 'three' | 'claw';
   /** graphics API: auto = WebGL2 on phones/tablets, WebGPU elsewhere */
   api: 'auto' | 'webgpu' | 'webgl';
+  /** safe mode: no post-processing, shadows, grass or photo billboards (for devices that crash) */
+  safe?: boolean;
 }
 
 export interface GameContext {

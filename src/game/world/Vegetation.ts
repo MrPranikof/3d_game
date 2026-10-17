@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { safeMode } from '../core/Crash';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { abs, attribute, cameraPosition, cameraViewMatrix, cross, dFdx, dFdy, dot, float, instanceIndex, mix, normalize, positionLocal, positionWorld, sin, smoothstep, texture, time, uv, vec3, vec4 } from 'three/tsl';
 import type { AssetTemplate } from '../../assets/pipeline/ModelLoader';
@@ -334,7 +335,7 @@ function grassTuftGeometry(blades: number, widen = 1): THREE.BufferGeometry {
  */
 const cutMats = new Map<THREE.Material, THREE.Material>();
 function photoTreeLayer(l: Layer): Layer {
-  if (l.material.name !== 'ref_tree_cut') return l;
+  if (l.material.name !== 'ref_tree_cut' || safeMode.on) return l; // safe mode: plain alpha-tested cards (no derivatives)
   let m = cutMats.get(l.material);
   if (!m) {
     const map = (l.material as THREE.MeshStandardMaterial).map!;

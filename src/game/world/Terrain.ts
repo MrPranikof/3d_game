@@ -168,14 +168,18 @@ export class Terrain {
     const far = smoothstep(22, 60, positionWorld.xz.sub(cameraPosition.xz).length()).mul(sA.r.add(sA.g).add(sA.b).add(sB.b).oneMinus().clamp(0, 1));
     col = mix(col, mix(vec3(0.27, 0.24, 0.09), vec3(0.4, 0.31, 0.13), patch).mul(macro), far.mul(0.8)); // dry steppe seen from afar
 
-    let nrm = tex('grass_steppe', 9, 'normalMap').rgb;
-    nrm = mix(nrm, tex('plowed', 4, 'normalMap').rgb, sA.r);
-    nrm = mix(nrm, tex('road_dirt', 5, 'normalMap').rgb, sA.g);
-    nrm = mix(nrm, tex('asphalt', 4, 'normalMap').rgb, sA.b);
+    // normal maps are skipped on phones (texture budget): sampling a missing texture renders black
+    const hasNormals = ['grass_steppe', 'plowed', 'road_dirt', 'asphalt'].every((k) => !!L(k).normalMap);
 
     const mat = new THREE.MeshStandardNodeMaterial({ name: 'terrain' });
     mat.colorNode = col;
-    mat.normalNode = normalMap(vec3(nrm), vec2(0.45, 0.45));
+    if (hasNormals) {
+      let nrm = tex('grass_steppe', 9, 'normalMap').rgb;
+      nrm = mix(nrm, tex('plowed', 4, 'normalMap').rgb, sA.r);
+      nrm = mix(nrm, tex('road_dirt', 5, 'normalMap').rgb, sA.g);
+      nrm = mix(nrm, tex('asphalt', 4, 'normalMap').rgb, sA.b);
+      mat.normalNode = normalMap(vec3(nrm), vec2(0.45, 0.45));
+    }
     mat.roughnessNode = mix(float(0.95), float(0.8), sA.b.add(smoothstep(0.5, 1, sB.b).mul(0.6)));
     mat.metalnessNode = float(0);
 

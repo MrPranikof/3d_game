@@ -1,3 +1,4 @@
+import { crumb, lastCrash } from '../core/Crash';
 import type { Team } from '../../assets/StylePreset';
 import type { GameSettings } from '../GameContext';
 
@@ -29,6 +30,7 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
     <div class="menu-bg"></div>
     <div class="menu-box">
       <div class="menu-title"><h1>МАЛАЯ ТОКМАЧКА</h1><p>Тактический MilSim · страйкбол · бронетехника · БПЛА</p></div>
+      <div class="crash-note" data-k="crash"></div>
       <div class="teams">
         <button class="team team-a" data-team="A"><b>Команда А</b><span>Украина · Leopard 2A6/2A4 · наступление с северо-запада</span></button>
         <button class="team team-b" data-team="B"><b>Команда Б</b><span>Россия · Т-72Б3, БМП-2 · оборона фермы на юго-востоке</span></button>
@@ -39,6 +41,7 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
         <label>Ботов в команде <input data-s="bots" type="range" min="3" max="12" value="${s.botsPerTeam ?? (touch ? 6 : 9)}"><output></output></label>
         <label>Чувствительность <input data-s="sens" type="range" min="0.3" max="2.5" step="0.05" value="${s.sens ?? 1}"><output></output></label>
         <label><input data-s="invert" type="checkbox" ${s.invertY ? 'checked' : ''}> Инверсия по вертикали</label>
+        <label><input data-s="safe" type="checkbox"> Безопасный режим (без теней, травы и пост-эффектов)</label>
         <label>Графика <select id="api" data-s="api"><option value="auto">Авто</option><option value="webgl">WebGL2 (совместимость)</option><option value="webgpu">WebGPU</option></select></label>
         <label class="touch-only">Раскладка <select data-s="layout"><option value="two">2 пальца</option><option value="three">3 пальца</option><option value="claw">4 пальца (Claw)</option></select></label>
         <button class="touch-only gyro" data-s="gyro">Включить гироскоп</button>
@@ -61,6 +64,17 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
   lay.value = s.touchLayout ?? 'two';
   const api = el.querySelector<HTMLSelectElement>('[data-s=api]')!;
   api.value = s.api ?? 'auto';
+  const safe = el.querySelector<HTMLInputElement>('[data-s=safe]')!;
+  safe.checked = !!s.safe;
+  const crashed = lastCrash();
+  const note = el.querySelector<HTMLElement>('[data-k=crash]')!;
+  if (crashed) {
+    note.textContent = `Прошлый запуск оборвался (этап: ${crashed}). Включён безопасный режим — если заработает, пришлите этот текст разработчику.`;
+    note.style.display = 'block';
+    safe.checked = true;
+    el.querySelector<HTMLDetailsElement>('details.settings')!.open = true;
+  }
+  crumb('menu');
   el.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((r) => {
     const out = r.nextElementSibling as HTMLOutputElement;
     const upd = () => (out.textContent = r.value);
@@ -87,12 +101,13 @@ export function showMenu(root: HTMLElement, onPlay: (r: MenuResult) => void): HT
         touch,
         touchLayout: lay.value as GameSettings['touchLayout'],
         api: api.value as GameSettings['api'],
+        safe: safe.checked,
       },
       sens: Number(el.querySelector<HTMLInputElement>('[data-s=sens]')!.value),
       invertY: el.querySelector<HTMLInputElement>('[data-s=invert]')!.checked,
       gyro,
     };
-    try { localStorage.setItem(KEY, JSON.stringify({ quality: r.settings.quality, botsPerTeam: r.settings.botsPerTeam, touchLayout: r.settings.touchLayout, api: r.settings.api, sens: r.sens, invertY: r.invertY })); } catch { /* ignore */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ quality: r.settings.quality, botsPerTeam: r.settings.botsPerTeam, touchLayout: r.settings.touchLayout, api: r.settings.api, safe: r.settings.safe, sens: r.sens, invertY: r.invertY })); } catch { /* ignore */ }
     onPlay(r);
   }));
   return el;

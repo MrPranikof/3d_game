@@ -185,3 +185,5 @@ summary { cursor: pointer; font-weight: 600; letter-spacing: 0.04em; }
 
 /* fps / render-scale readout */
 #hud .fps { position: absolute; top: 8px; right: 10px; font: 600 11px/1 ui-monospace, monospace; color: rgba(233, 235, 224, 0.75); text-shadow: 0 1px 2px #000; pointer-events: none; }
+
+.menu .crash-note { display: none; margin: 0 0 12px; padding: 10px 12px; border: 1px solid rgba(255, 170, 60, 0.6); background: rgba(80, 45, 10, 0.55); color: #ffd9a8; border-radius: 6px; font-size: 13px; line-height: 1.35; }
