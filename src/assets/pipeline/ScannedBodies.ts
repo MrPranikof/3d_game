@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { fitToBudget, textureBudget } from '../procedural/TextureBudget';
 
 /**
  * Shipped Tripo-generated character bodies (prepared offline by tools/tripo-prep.mjs +
@@ -47,6 +48,13 @@ export async function applyScannedBody(root: THREE.Object3D, url: string): Promi
     if (!pb) throw new Error(`${url}: bone ${b.name} missing in rig`);
     return pb;
   });
+  // phones: one downscaled colour map only (see TextureBudget)
+  if (!textureBudget.secondaryMaps) {
+    const m = scan.material as THREE.MeshStandardMaterial;
+    m.normalMap = m.roughnessMap = m.metalnessMap = null;
+    if (m.map?.image) { m.map.image = fitToBudget(m.map.image as HTMLImageElement | ImageBitmap, 2); m.map.needsUpdate = true; }
+    m.needsUpdate = true;
+  }
   const mesh = new THREE.SkinnedMesh(scan.geometry, scan.material);
   mesh.name = 'Body_scan';
   (mesh.material as THREE.Material).name ||= 'scan';

@@ -458,6 +458,8 @@ export const MATERIAL_DEFS: Record<string, MaterialDef> = {
 
 export type MaterialKey = keyof typeof MATERIAL_DEFS & string;
 
+import { fitToBudget, textureBudget } from './TextureBudget';
+
 // ── CC0 photoscanned textures (Poly Haven via tools/fetch-textures.mjs) override the synthesized
 // ones for the keys listed in public/textures/photo.json; everything else stays procedural. ──
 interface PhotoSet { size: number; map: THREE.Texture; normalMap?: THREE.Texture; roughnessMap?: THREE.Texture }
@@ -468,7 +470,7 @@ function loadTex(url: string, srgb: boolean): Promise<THREE.Texture> {
   return new Promise((res, rej) => {
     const im = new Image();
     im.onload = () => {
-      const t = new THREE.Texture(im);
+      const t = new THREE.Texture(fitToBudget(im));
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.anisotropy = 8;
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -489,8 +491,8 @@ export function preloadPhotoTextures(): Promise<void> {
       await Promise.all(Object.entries(manifest).map(async ([key, m]) => {
         const [map, nor, rough] = await Promise.all([
           loadTex(`${base}${key}_diff.jpg`, true),
-          m.maps.includes('nor') ? loadTex(`${base}${key}_nor.jpg`, false) : undefined,
-          m.maps.includes('rough') ? loadTex(`${base}${key}_rough.jpg`, false) : undefined,
+          m.maps.includes('nor') && textureBudget.secondaryMaps ? loadTex(`${base}${key}_nor.jpg`, false) : undefined,
+          m.maps.includes('rough') && textureBudget.secondaryMaps ? loadTex(`${base}${key}_rough.jpg`, false) : undefined,
         ]);
         photos.set(key, { size: m.size, map, normalMap: nor, roughnessMap: rough });
       }));

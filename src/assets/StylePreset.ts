@@ -14,7 +14,7 @@ export const GLOBAL_STYLE_PREFIX =
   'realistic dirt and wear, 8k normal and roughness maps, clean game-ready topology, exported as hierarchical .glb:';
 
 /** Bump whenever generator output changes — invalidates every IndexedDB cache entry. */
-export const FACTORY_VERSION = '2.5.0';
+export const FACTORY_VERSION = '2.5.1';
 
 export const UNIT_SCALE_METERS = 1;
 
@@ -30,7 +30,8 @@ export interface QualitySettings {
 }
 
 export const QUALITY: Record<QualityTier, QualitySettings> = {
-  mobile: { textureSize: 512, radial: 14, lodRatios: [0.5, 0.25, 0.08] },
+  // phones: 256 px synthesized maps (×45 materials × 3 maps); iOS kills tabs past ~1 GB
+  mobile: { textureSize: 256, radial: 14, lodRatios: [0.5, 0.25, 0.08] },
   desktop: { textureSize: 1024, radial: 22, lodRatios: [0.55, 0.28, 0.1] },
   ultra: { textureSize: 2048, radial: 32, lodRatios: [0.6, 0.32, 0.12] },
 };

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import refAtlases from './refAtlases.json';
+import { fitToBudget, textureBudget } from './TextureBudget';
 
 /**
  * Reference-projected texturing for procedural vehicles.
@@ -37,7 +38,7 @@ export const REF_ATLASES = refAtlases as unknown as Record<string, RefAtlas>;
 const NO_PROJECT_MATS = /^(track_links|glass_optic|cage_net|emissive|interior_shell|rust|brick_raw|bark_charred)/;
 const NO_PROJECT_NODES = new Set(['Cage', 'Interior_Cockpit', 'Interior_Gunner', 'Partition', 'Floor']);
 
-const textures = new Map<string, { map: THREE.Texture; normal: THREE.Texture }>();
+const textures = new Map<string, { map: THREE.Texture; normal: THREE.Texture | null }>();
 let preload: Promise<void> | null = null;
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -54,12 +55,12 @@ export function preloadRefTextures(): Promise<void> {
   preload ??= Promise.all(Object.keys(REF_ATLASES).map(async (id) => {
     try {
       const base = `${import.meta.env.BASE_URL}models/ref/${id}`;
-      const [a, n] = await Promise.all([loadImage(`${base}_albedo.jpg`), loadImage(`${base}_normal.jpg`)]);
-      const map = new THREE.Texture(a);
+      const [a, n] = await Promise.all([loadImage(`${base}_albedo.jpg`), textureBudget.secondaryMaps ? loadImage(`${base}_normal.jpg`) : null]);
+      const map = new THREE.Texture(fitToBudget(a, 2));
       map.colorSpace = THREE.SRGBColorSpace;
       map.anisotropy = 8;
-      const normal = new THREE.Texture(n);
-      for (const t of [map, normal]) { t.flipY = true; t.generateMipmaps = true; t.needsUpdate = true; }
+      const normal = n ? new THREE.Texture(fitToBudget(n, 2)) : null;
+      for (const t of [map, normal]) if (t) { t.flipY = true; t.generateMipmaps = true; t.needsUpdate = true; }
       textures.set(id, { map, normal });
     } catch (e) {
       console.warn(e);
@@ -88,7 +89,7 @@ export function preloadTreeTextures(): Promise<void> {
   treePreload ??= (async () => {
     try {
       const base = `${import.meta.env.BASE_URL}models/ref/`;
-      const cut = new THREE.Texture(await loadImage(`${base}tree_acacia_cut.png`));
+      const cut = new THREE.Texture(fitToBudget(await loadImage(`${base}tree_acacia_cut.png`), 1));
       cut.colorSpace = THREE.SRGBColorSpace; cut.anisotropy = 4; cut.needsUpdate = true;
       treeTex = { cut };
     } catch (e) {
@@ -124,10 +125,10 @@ export function preloadWeaponRefs(): Promise<void> {
   weaponPreload ??= Promise.all(['ak', 'ar'].map(async (id) => {
     try {
       const base = `${import.meta.env.BASE_URL}models/ref/weapon_${id}`;
-      const [data, a, n] = await Promise.all([fetch(`${base}.json`).then((r) => r.json()), loadImage(`${base}_albedo.jpg`), loadImage(`${base}_normal.jpg`)]);
-      const map = new THREE.Texture(a), normal = new THREE.Texture(n);
+      const [data, a, n] = await Promise.all([fetch(`${base}.json`).then((r) => r.json()), loadImage(`${base}_albedo.jpg`), textureBudget.secondaryMaps ? loadImage(`${base}_normal.jpg`) : null]);
+      const map = new THREE.Texture(fitToBudget(a, 2)), normal = n ? new THREE.Texture(fitToBudget(n, 2)) : null;
       map.colorSpace = THREE.SRGBColorSpace;
-      for (const t of [map, normal]) { t.anisotropy = 8; t.needsUpdate = true; }
+      for (const t of [map, normal]) if (t) { t.anisotropy = 8; t.needsUpdate = true; }
       const material = new THREE.MeshStandardMaterial({ name: `ref_weapon_${id}`, map, normalMap: normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.65, metalness: 0.2, envMapIntensity: 0.5 }); // grazing sky reflections read as blue streaks
       const edgeMaterial = new THREE.MeshStandardMaterial({ name: `ref_weapon_edge_${id}`, color: 0x232425, roughness: 0.85, metalness: 0.1, envMapIntensity: 0.35 });
       weapons.set(id, { ...data, material, edgeMaterial });

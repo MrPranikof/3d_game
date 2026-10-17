@@ -12,6 +12,7 @@ import { generateLODs } from './pipeline/LODBuilder';
 import { type AssetInstance, type AssetTemplate, foldLODs, ModelLoader } from './pipeline/ModelLoader';
 import { ProceduralEngine } from './procedural/ProceduralEngine';
 import { preloadPhotoTextures } from './procedural/MaterialLibrary';
+import { setTextureBudget } from './procedural/TextureBudget';
 import { preloadRefTextures, preloadTreeTextures, preloadWeaponRefs } from './procedural/RefTexture';
 import { TripoProvider } from './providers/TripoProvider';
 
@@ -83,6 +84,7 @@ export class SingleAIModelFactory extends EventTarget {
   constructor(private readonly opts: FactoryOptions = {}) {
     super();
     this.quality = opts.quality ?? detectQualityTier();
+    setTextureBudget(this.quality);
   }
 
   get engine(): EngineId {
